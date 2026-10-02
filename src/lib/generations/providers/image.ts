@@ -143,7 +143,7 @@ export async function generateImage(
 
   // One combined reference array for BOTH providers (2026-08-26): identity
   // first, then outfit, then prop. GPT's multi-image edit always worked
-  // this way; FLUX.2 Pro's /edit now takes the same array (up to ten), so
+  // this way; FLUX's edit endpoint now takes the same array (up to ten), so
   // the prompt's instruction suffixes about each photo hold on whichever
   // image model the person picked. (This used to say they stayed true
   // "across the lane switch" — there is no lane switch since the Flux

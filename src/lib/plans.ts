@@ -143,6 +143,19 @@ export type PlanId = keyof typeof PLAN_LIMITS;
 // runners-up.
 export const FREE_TIER_VIDEO_MODEL_ID = "wan-turbo";
 
+// The free trial's picture engine (2026-10-02, the operator: "Set FLUX 3 as
+// the default picture engine for free tier. If what we have is cheaper leave
+// it as is"). Free accounts were pinned to the admin default, GPT Image 2.5:
+// $0.057 to $0.0909 a picture (image-resolution.ts, GPT_OFFERS). FLUX 3 at
+// 1k bills $0.024 on fal today and $0.048 at Black Forest Labs' list price,
+// so it is cheaper at either rate. Pinned server-side in actions.ts, the
+// same way as the video lane above, and mirrored in the composer's data.
+//
+// Likeness: in the 2026-10-02 blind Eva probe FLUX 3 scored 70.1 (Seedream
+// 5.0 Pro 78.4, FLUX.2 Pro 61.2). GPT Image 2.5 was not in that probe, so how
+// a free picture compares with a paid one on GPT is not measured.
+export const FREE_TIER_IMAGE_MODEL_ID = "flux";
+
 // Monthly cap on AI-generated character reference photos.
 //
 // These cost real money (~$0.17 each on GPT Image) but consumed nothing

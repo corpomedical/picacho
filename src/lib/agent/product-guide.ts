@@ -1,5 +1,6 @@
 import { PRICING_TIERS } from "../pricing";
-import { FREE_TIER_VIDEO_MODEL_ID, PLAN_CHAT_UNIT_LIMITS } from "../plans";
+import { FREE_TIER_IMAGE_MODEL_ID, FREE_TIER_VIDEO_MODEL_ID, PLAN_CHAT_UNIT_LIMITS } from "../plans";
+import { getImageModel } from "../generations/providers/image-models";
 import { getDialogueCreditWeight } from "../generations/providers/video-models";
 import { CINEMA_PRESETS, isProvenPreset } from "../generations/cinema-presets";
 import { TEMPLATES } from "../templates";
@@ -117,7 +118,7 @@ CREDITS, PLANS AND THE FREE TIER.
 - 1 credit ≈ 1 standard video or image; premium engines cost more per the catalogue above. Credits available = the plan's monthly allowance + bonus credits, with purchased credits covering anything beyond; the balance is in the studio header.
 ${renderPlans()}
 - CREDIT PACKS can be bought with or without a plan.
-- Free accounts get ONE free generation per day (resets on the UTC day): a short, silent clip on the cheapest engine (${FREE_TIER_VIDEO_MODEL_ID}: with a character photo it runs image-to-video, without one text-to-video), or a single image. Dialogue, longer durations and other engines need a plan or purchased credits. No credit card needed.
+- Free accounts get ONE free generation per day (resets on the UTC day): a short, silent clip on the cheapest engine (${FREE_TIER_VIDEO_MODEL_ID}: with a character photo it runs image-to-video, without one text-to-video), or a single image (on ${getImageModel(FREE_TIER_IMAGE_MODEL_ID).name}). Dialogue, longer durations and other engines need a plan or purchased credits. No credit card needed.
 - Plans and credits are bought at picacho.ai/pricing. In the Android app: if Settings shows a store section, plans and packs can be bought through Google Play there; otherwise the app has no purchasing and everything is bought on the website — the app signs into the same account either way.
 
 OTHER SURFACES.

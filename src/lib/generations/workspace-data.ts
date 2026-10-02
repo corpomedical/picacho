@@ -3,7 +3,7 @@ import { guardedRead } from "@/lib/supabase/read-guard";
 import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { isChatAgentEnabled } from "@/lib/agent/enabled";
-import { advancedVideoPlan, PLAN_LIMITS, type PlanId } from "@/lib/plans";
+import { advancedVideoPlan, FREE_TIER_IMAGE_MODEL_ID, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import {
   VIDEO_MODELS_BY_PRICE,
   getDefaultDurationSeconds,
@@ -235,8 +235,19 @@ export async function getGenerateWorkspaceData(
   }));
 
   const globalDefaultVideoModelId = videoModelSetting?.value ?? "kling";
-  // Same fallback as actions.ts: the recommended lane when nothing is set.
-  const defaultImageModelId = imageModelSetting?.value ?? "gpt-image";
+  // Same fallback as actions.ts: the recommended lane when nothing is set —
+  // and the same free-tier pin (FREE_TIER_IMAGE_MODEL_ID), read with the
+  // server's own isFreeTierAccount rule, so a free account's composer plans
+  // its send against the lane the server will actually render on.
+  const freeTierAccount =
+    Boolean(profile) &&
+    ((profile?.plan as string | null) ?? "none") === "none" &&
+    ((profile?.bonus_credits as number | null) ?? 0) === 0 &&
+    ((profile?.purchased_credits as number | null) ?? 0) === 0 &&
+    profile?.role !== "admin";
+  const defaultImageModelId = freeTierAccount
+    ? FREE_TIER_IMAGE_MODEL_ID
+    : (imageModelSetting?.value ?? "gpt-image");
   // Dormant models stay out of the composer until the experimental_models
   // flag is on (2026-09-06). Read here rather than passed down because this
   // is the one place the picker's list is built — and it is only half the

@@ -21,13 +21,23 @@ export const IMAGE_MODELS = [
     // image-to-image took ONE source it repainted — the "0% match"
     // fallback incident), so the fallback lane now keeps the face and
     // multi-character finally has a fallback at all.
+    //
+    // FLUX.2 Pro → FLUX 3 Image (2026-10-02, the operator: "Yes, swap FLUX.2
+    // Pro for FLUX 3"). Blind Eva probe that morning, same prompt and the
+    // same three reference photos, three judges, held-out photo as truth:
+    // Seedream 5.0 Pro 78.4 · FLUX 3 70.1 · FLUX.2 Pro 61.2 (FLUX.2 drifted
+    // to a generic freckled redhead on two of three scenes). FLUX 3 billed
+    // $0.024 per output megapixel and nothing for the reference photos —
+    // about a third of FLUX.2's price at 1k. Its /edit-image still takes up
+    // to ten references in order, so everything above holds. Layer edits
+    // stay on FLUX.2 Pro: see LAYER_EDIT_ENDPOINT in layers.ts.
     id: "flux",
-    name: "Flux 2 Pro",
+    name: "FLUX 3",
     provider: "fal" as const,
-    falTextToImage: "fal-ai/flux-2-pro",
-    falImageToImage: "fal-ai/flux-2-pro/edit",
+    falTextToImage: "blackforestlabs/flux-3/text-to-image",
+    falImageToImage: "blackforestlabs/flux-3/edit-image",
     recommended: false,
-    description: "Fast, cheap and photoreal — multi-reference identity via FLUX.2 edit.",
+    description: "Fast, cheap and photoreal — multi-reference identity via FLUX 3 edit.",
   },
   {
     // Nano Banana Pro — Google's Gemini 3 Pro Image, the second lane a person

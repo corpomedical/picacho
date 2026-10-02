@@ -157,6 +157,14 @@ export function layerStoragePath(
 // about $0.045 for a layer this size — and birefnet/v2 is fractions of a
 // cent. One credit ($0.28) covers the edit, the re-cut, the score, and the
 // gate's one free retry (~$0.095 worst case) with room over.
+/**
+ * The engine a layer edit renders on. Pinned to FLUX.2 Pro when the picture
+ * lane moved to FLUX 3 (2026-10-02): a layer is re-rendered at its own exact
+ * width and height, which FLUX.2 takes as image_size and FLUX 3 cannot (it
+ * offers size tiers and a list of shapes only), and the 96 identity score
+ * above was measured on this endpoint. Move it only after a layer probe.
+ */
+export const LAYER_EDIT_ENDPOINT = "fal-ai/flux-2-pro/edit";
 export const LAYER_RECUT_ENDPOINT = "fal-ai/birefnet/v2";
 export const LAYER_RECUT_MODEL = "Portrait";
 export const LAYER_RECUT_RESOLUTION = "2048x2048";

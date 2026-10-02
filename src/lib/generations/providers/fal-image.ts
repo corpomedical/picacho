@@ -1,5 +1,6 @@
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import {
+  LAYER_EDIT_ENDPOINT,
   LAYER_RECUT_ENDPOINT,
   LAYER_RECUT_MODEL,
   LAYER_RECUT_RESOLUTION,
@@ -49,6 +50,9 @@ export class SeedreamImageRefusal extends Error {
   }
 }
 
+/** fal's own limit on FLUX 3 edit-image's image_urls (its schema, read 2026-10-02). */
+export const FLUX_MAX_INPUT_IMAGES = 10;
+
 // Image generation via Flux on fal.ai — the faster/cheaper alternative.
 // Unlike OpenAI, fal.ai returns a hosted URL directly, so no re-upload is
 // needed (same as the video provider).
@@ -75,9 +79,10 @@ export async function generateImageWithFlux(
     );
   }
 
-  // FLUX.2 Pro (2026-08-26): the /edit endpoint takes image_urls — up to
-  // ten reference images — so the whole reference array (identity, outfit,
-  // prop, or several characters) rides exactly like the GPT edit lane. The
+  // FLUX.2 Pro (2026-08-26), FLUX 3 since 2026-10-02: the edit endpoint
+  // takes image_urls — up to ten reference images — so the whole reference
+  // array (identity, outfit, prop, or several characters) rides exactly like
+  // the GPT edit lane. The
   // v1 code here took ONE image_url it then repainted, which is why the
   // old fallback lost faces and multi-character had to be blocked upstream.
   const referenceUrls = (Array.isArray(referenceImageUrl)
@@ -90,12 +95,27 @@ export async function generateImageWithFlux(
   const model = getImageModel("flux");
   if (model.provider !== "fal") throw new Error("Flux model config is misconfigured.");
 
-  const endpoint = referenceUrls.length ? model.falImageToImage : model.falTextToImage;
-  const body: Record<string, unknown> = referenceUrls.length
-    ? { prompt, image_urls: referenceUrls }
-    : { prompt };
-  if (options?.outputFormat) body.output_format = options.outputFormat;
-  if (options?.size) body.image_size = { width: options.size.width, height: options.size.height };
+  // Two engines behind one function since 2026-10-02. Every picture renders
+  // on FLUX 3 (the catalogue's endpoints); a layer edit — the only caller
+  // that passes options — stays on FLUX.2 Pro, whose image_size takes the
+  // layer's exact pixels (LAYER_EDIT_ENDPOINT says why).
+  const layerEdit = Boolean(options) && referenceUrls.length > 0;
+  let endpoint: string;
+  let body: Record<string, unknown>;
+  if (layerEdit) {
+    endpoint = LAYER_EDIT_ENDPOINT;
+    body = { prompt, image_urls: referenceUrls };
+    if (options?.outputFormat) body.output_format = options.outputFormat;
+    if (options?.size) body.image_size = { width: options.size.width, height: options.size.height };
+  } else {
+    endpoint = referenceUrls.length ? model.falImageToImage : model.falTextToImage;
+    // FLUX 3 bills per output megapixel, so the tier is pinned to 1k (about
+    // one megapixel) — one price, the band image-resolution.ts quotes. The
+    // shape is left at "auto", which follows the first reference photo, as
+    // FLUX.2's default image_size did.
+    body = { prompt, resolution: "1k" };
+    if (referenceUrls.length) body.image_urls = referenceUrls.slice(0, FLUX_MAX_INPUT_IMAGES);
+  }
 
   const res = await fetchWithTimeout(
     `https://fal.run/${endpoint}`,
@@ -107,11 +127,22 @@ export async function generateImageWithFlux(
       },
       body: JSON.stringify(body),
     },
-    60_000,
+    // FLUX 3 at 1k answered in well under a minute in the 2026-10-02 probe;
+    // the extra minute is headroom, the same the Seedream lane gives itself.
+    layerEdit ? 60_000 : 120_000,
   );
 
   if (!res.ok) {
     const text = await res.text();
+    // fal answers a prompt it will not draw with 422 (measured on Nano Banana
+    // Pro, 2026-09-23). Not yet seen from FLUX 3, whose answer carries no
+    // has_nsfw_concepts field. Only a 422 that names the content is read as a
+    // refusal: the same status also means a malformed input (a reference
+    // photo over 4 MP), which is our fault, not the person's.
+    if (res.status === 422 && /safety|content|policy|nsfw|moderat|flagged/i.test(text)) {
+      console.warn(`[flux] 422 from ${endpoint}: ${text.slice(0, 300)}`);
+      throw new FluxSafetyRejection(IMAGE_RESULT_REFUSED);
+    }
     throw new Error(`fal.ai (Flux) error (${res.status}): ${text.slice(0, 300)}`);
   }
 

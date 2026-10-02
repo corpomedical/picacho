@@ -11,6 +11,8 @@ import {
   selectableImageModels,
 } from "./providers/image-models";
 import { MODEL_CAPABILITIES } from "./send-plan";
+import { LAYER_EDIT_ENDPOINT } from "./layers";
+import { FREE_TIER_IMAGE_MODEL_ID } from "../plans";
 import { quoteSend } from "./quote";
 import { COST_BASIS_USD_PER_CREDIT } from "./providers/video-models";
 import {
@@ -302,6 +304,24 @@ describe("free accounts", () => {
     expect(pick).toContain("SELECTABLE_IMAGE_MODEL_IDS.includes(");
   });
 
+  it("render pictures on FLUX 3, the cheaper lane, whatever the admin default is", () => {
+    // 2026-10-02, the operator: "Set FLUX 3 as the default picture engine for
+    // free tier. If what we have is cheaper leave it as is."
+    expect(getImageModel(FREE_TIER_IMAGE_MODEL_ID).name).toBe("FLUX 3");
+    const pick = actions.slice(
+      actions.indexOf("const isFreeTierAccount ="),
+      actions.indexOf("imageModelId = requestedImageModelId;"),
+    );
+    expect(pick).toContain("if (isFreeTierAccount) imageModelId = FREE_TIER_IMAGE_MODEL_ID;");
+    // The condition the operator set: the free lane must cost less than the
+    // admin default it replaced, even at its list (not launch) price.
+    const free = imageResolutionOffers(FREE_TIER_IMAGE_MODEL_ID)[0].costPerImageUsd;
+    const gpt = imageResolutionOffers("gpt-image")[0].costPerImageUsd;
+    expect(free).toBeLessThan(gpt);
+    // The free lane is never a paid-only one.
+    expect(isImageModelPaidOnly(FREE_TIER_IMAGE_MODEL_ID)).toBe(false);
+  });
+
   it("pays for a paid-only lane with a plan, and the flag says which lanes those are", () => {
     expect(isImageModelPaidOnly("gemini")).toBe(true);
     expect(isImageModelPaidOnly("seedream-5-pro")).toBe(true);
@@ -335,6 +355,25 @@ describe("routing", () => {
     const guard = falImage.slice(start, falImage.indexOf("const data = await res.json()", start));
     expect(guard).toContain("res.status === 422");
     expect(guard).toContain("throw new GeminiImageRefusal(IMAGE_RESULT_REFUSED)");
+  });
+
+  it("renders pictures on FLUX 3 and keeps layer edits on FLUX.2 Pro", () => {
+    // 2026-10-02: the picture lane moved to FLUX 3; a layer edit needs the
+    // layer's exact pixels, which only FLUX.2's image_size takes.
+    const flux = IMAGE_MODELS.find((m) => m.id === "flux");
+    expect(flux && "falImageToImage" in flux ? flux.falImageToImage : null).toBe("blackforestlabs/flux-3/edit-image");
+    expect(LAYER_EDIT_ENDPOINT).toBe("fal-ai/flux-2-pro/edit");
+    const start = falImage.indexOf("export async function generateImageWithFlux");
+    const body = falImage.slice(start, falImage.indexOf("const res = await fetchWithTimeout", start));
+    expect(body).toContain("endpoint = LAYER_EDIT_ENDPOINT;");
+    expect(body).toContain('resolution: "1k"');
+  });
+
+  it("reads a FLUX 422 that names the content as a refusal, and only that", () => {
+    const start = falImage.indexOf("export async function generateImageWithFlux");
+    const guard = falImage.slice(start, falImage.indexOf("const data = await res.json()", start));
+    expect(guard).toContain("res.status === 422 && /safety|content|policy|nsfw|moderat|flagged/i.test(text)");
+    expect(guard).toContain("throw new FluxSafetyRejection(IMAGE_RESULT_REFUSED)");
   });
 
   it("fails loudly when the answer carries no picture", () => {

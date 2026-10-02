@@ -5,7 +5,7 @@ import { restoreModel, suspendModel } from "@/lib/admin/actions";
 import { getAllModelHealth } from "@/lib/generations/model-health";
 import { VIDEO_MODELS, isDormantVideoModel } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS, isImageModelPaidOnly } from "@/lib/generations/providers/image-models";
-import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
+import { FREE_TIER_IMAGE_MODEL_ID, FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import { ApplyOnChangeSelect } from "@/components/admin/apply-on-change-select";
 import { identityModel, utilityModel } from "@/lib/generations/providers/openai-model";
 import { fetchAll } from "@/lib/admin/fetch-all";
@@ -298,7 +298,7 @@ export default async function AdminModelsPage({ searchParams }: { searchParams: 
             const items = menuItems(m.key);
             const withDefault = m.key === "video" || m.key === "picture";
             const currentDefault = m.key === "video" ? defaults.video : m.key === "picture" ? defaults.picture : null;
-            // Flux 2 Pro can be the picture default without being on the menu (as drawn).
+            // FLUX 3 can be the picture default without being on the menu (as drawn).
             const extra =
               m.key === "picture"
                 ? IMAGE_MODELS.filter((i) => i.id === "flux").map((i) => ({ id: i.id, label: i.name, provider: "fal", detail: undefined, locked: undefined, defaultOnly: true }))
@@ -320,6 +320,7 @@ export default async function AdminModelsPage({ searchParams }: { searchParams: 
                           <p className="text-[13.5px] text-atelier-ink">
                             {item.label}
                             {item.id === FREE_TIER_VIDEO_MODEL_ID && m.key === "video" && <Chip>free accounts</Chip>}
+                            {item.id === FREE_TIER_IMAGE_MODEL_ID && m.key === "picture" && <Chip>free accounts</Chip>}
                             {m.key === "picture" && isImageModelPaidOnly(item.id) && <Chip>paid plans</Chip>}
                           </p>
                           <div className="mt-0.5 flex flex-wrap items-center gap-x-1 text-[11.5px] text-atelier-muted">

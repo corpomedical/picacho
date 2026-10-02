@@ -117,9 +117,15 @@ const SEEDREAM_OFFERS: readonly ImageResolutionOffer[] = [
   { value: "2K", costPerImageUsd: 0.1755, creditWeight: weigh(0.1755) },
 ];
 
-/** FLUX.2 Pro, the admin-only fallback lane: one band, unchanged. */
+/**
+ * FLUX 3, the admin-only lane (FLUX.2 Pro until 2026-10-02): one band. fal
+ * billed $0.024 per output megapixel that day and nothing for the reference
+ * photos (its usage API: three 1k pictures = 3 MP = $0.072). That is Black
+ * Forest Labs' launch rate; their list price for 1k is $0.048, so the band is
+ * quoted at $0.048 and stays one credit if the promotion ends.
+ */
 const FLUX_OFFERS: readonly ImageResolutionOffer[] = [
-  { value: "1K", costPerImageUsd: 0.04, creditWeight: 1 },
+  { value: "1K", costPerImageUsd: 0.048, creditWeight: 1 },
 ];
 
 const OFFERS: Record<string, readonly ImageResolutionOffer[]> = {

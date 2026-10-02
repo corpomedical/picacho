@@ -140,7 +140,7 @@ const SHARED_SCENE_INSTRUCTION =
   // a reason to move off that frame immediately.
   "Write the scene as already in motion at the very first moment — the action is underway, " +
   "not about to begin, and the character is never standing still in a posed portrait.";
-import { advancedVideoPlan, FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
+import { advancedVideoPlan, FREE_TIER_IMAGE_MODEL_ID, FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import { serverBuiltFrames } from "@/lib/generations/server-built";
 import { serverPress } from "@/lib/generations/server-press";
 import {
@@ -1105,7 +1105,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // that default rather than erroring.
   //
   // Only the lanes the composer actually offers are accepted
-  // (SELECTABLE_IMAGE_MODEL_IDS), not the whole catalogue — Flux 2 Pro stays
+  // (SELECTABLE_IMAGE_MODEL_IDS), not the whole catalogue — FLUX 3 stays
   // an admin choice, so a hand-written form must not be able to select it
   // and route around that decision.
   //
@@ -1118,6 +1118,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // gives away. Silently pinning rather than erroring, for the same reason
   // the video lane does: a trial user who has not seen one result yet learns
   // nothing from "that engine needs a plan".
+  //
+  // And the default they are pinned to is not the admin's: free accounts
+  // render pictures on FREE_TIER_IMAGE_MODEL_ID (FLUX 3, 2026-10-02), the
+  // cheaper lane — plans.ts has the arithmetic.
+  if (isFreeTierAccount) imageModelId = FREE_TIER_IMAGE_MODEL_ID;
   const requestedImageModelId = (formData.get("image_model_id") as string) || "";
   if (
     contentType === "image" &&

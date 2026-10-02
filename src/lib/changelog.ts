@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.215.0",
+    build: 254,
+    date: "2026-10-02",
+    title: "FLUX 3 replaces FLUX.2 Pro, and makes free accounts' pictures",
+    items: [
+      "Free accounts now make their pictures on FLUX 3 instead of GPT Image 2.5. It costs us less per picture: $0.024 today and $0.048 at its list price, against $0.057 to $0.091 on GPT Image. Paid accounts keep the default you set and the engines they can pick.",
+      "The FLUX picture engine you can set as the default under Admin → Models is now FLUX 3 Image, Black Forest Labs' new model, in place of FLUX.2 Pro. Character photos made while FLUX is the default use it too.",
+      "In a blind test on Eva (three scenes, same prompt, same three photos), FLUX 3 kept her face better: 70 against FLUX.2 Pro's 61. Seedream 5.0 Pro scored 78. It costs about a third as much per picture today: $0.024 a megapixel, with the reference photos free.",
+      "Layer edits stay on FLUX.2 Pro. They need the picture at the layer's exact size, which FLUX 3 can't do, and FLUX.2 Pro is the engine they were proven on.",
+      "If FLUX 3 refuses a picture for its content, it counts as a refusal and the credit comes back, the same as the other engines.",
+    ],
+  },
+  {
     version: "1.214.0",
     build: 253,
     date: "2026-10-02",
