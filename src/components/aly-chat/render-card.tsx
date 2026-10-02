@@ -16,7 +16,8 @@ import { ExpandMediaButton } from "@/components/media-viewer";
 import { DownloadButton } from "@/components/download-button";
 import { ZoomableImage } from "@/components/zoomable-image";
 import { lightHref } from "@/lib/light/mode";
-import { CreatingPicture } from "./creating-picture";
+import { isPolicyRefusal, localizeServerText } from "@/lib/i18n/server-text";
+import { CreatingPicture, RefusedPicture } from "./creating-picture";
 import styles from "./aly-chat.module.css";
 
 // A picture or clip Aly got ready in the chat (2026-09-29). The card shows
@@ -53,6 +54,10 @@ export function RenderCard({
   const [state, setState] = useState<State>(card.generationId ? "working" : "ready");
   const [take, setTake] = useState<LightTake | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The send was turned away before any take existed (runGeneration's own
+  // error: a content-policy refusal, no credits, …), so it cost nothing.
+  // False when the call itself failed: the render may still have started.
+  const [noTake, setNoTake] = useState(false);
   // A picture being made shows ChatGPT's frame instead of the card
   // (creating-picture.tsx), from the moment it is KNOWN to be working: a card
   // opened again starts as "working" until its take is read, and a finished
@@ -162,6 +167,7 @@ export function RenderCard({
   async function make() {
     if (card.kind === "ad" || state === "working") return;
     setError(null);
+    setNoTake(false);
     setState("working");
     setStartedAt(Date.now());
     setMaking(true);
@@ -197,6 +203,7 @@ export function RenderCard({
     }
     if (result.error !== null) {
       setError(result.error);
+      setNoTake(true);
       setState("failed");
       return;
     }
@@ -226,6 +233,44 @@ export function RenderCard({
         stopLabel={c.renderStop}
         onStop={genId ? () => void requestGenerationCancel(genId) : undefined}
         startedAt={startedAt}
+        aspect={DEFAULT_IMAGE_ASPECT}
+      />
+    );
+  }
+
+  // A picture that was refused or didn't come out: the frame says it
+  // (operator's pick 2 of the 2026-10-02 refusal drafts). A refusal offers no
+  // "Try again" — the same words would only be refused again — and "Nothing
+  // was charged" is read from the take's own credits, never assumed.
+  if (state === "failed" && card.kind === "image") {
+    const policyUnavailable = error !== null && /could not run just now/.test(error);
+    const refused = take ? take.refused : error !== null && isPolicyRefusal(error) && !policyUnavailable;
+    const reason = take?.failReason ?? (error ? localizeServerText(error, t) : t.generate.stepFailedGeneric);
+    const cost = take
+      ? take.creditsUsed === 0
+        ? { text: c.renderNothingCharged, free: true }
+        : {
+            text:
+              take.creditsUsed === 1
+                ? c.renderUsedOne
+                : formatMsg(c.renderUsed, { credits: take.creditsUsed }),
+            free: false,
+          }
+      : noTake
+        ? { text: c.renderNothingCharged, free: true }
+        : null;
+    const change = { label: c.renderChangeWords, href: openHref, primary: refused };
+    const again = {
+      label: card.credits === 1 ? c.renderTryAgainOne : formatMsg(c.renderTryAgain, { credits: card.credits }),
+      onClick: () => void make(),
+      primary: true,
+    };
+    return (
+      <RefusedPicture
+        lead={refused ? c.renderRefusedLead : c.renderFailedLead}
+        reason={reason}
+        cost={cost}
+        actions={refused ? [change] : [again, change]}
         aspect={DEFAULT_IMAGE_ASPECT}
       />
     );

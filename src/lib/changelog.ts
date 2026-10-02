@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.216.0",
+    build: 255,
+    date: "2026-10-02",
+    title: "A refused picture says so, right where it would have been",
+    items: [
+      "In Aly's chat and in Picacho Light, a picture that is refused or doesn't come out no longer leaves a card that looks almost new with a small red line. The frame stays where the picture would have been, its light stops, and the reason appears inside it.",
+      "It says \"I couldn't make this picture.\" when our rules or the picture engine turned the request away, and \"This picture didn't come out.\" when something broke. The reason is the one Picacho already sends, now also when the engine refused partway through, which used to show no reason at all.",
+      "Under the reason it says what it cost, read from the take itself: \"Nothing was charged.\" (with a green dot) or \"1 credit was used.\".",
+      "A refusal offers only \"Change the words\", since the same words would be refused again. A failure offers \"Try again\" with its price, and \"Change the words\". Light's own box shows the same frame for pictures. Videos keep the look they had.",
+    ],
+  },
+  {
     version: "1.215.0",
     build: 254,
     date: "2026-10-02",

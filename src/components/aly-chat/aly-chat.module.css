@@ -251,6 +251,45 @@
   mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
+/* A refused picture (RefusedPicture): the frame stays, its light stops and
+   fades, and the reason sits inside it. The frame grows past its square when
+   a long reason needs the room. */
+.makingStill {
+  display: flex;
+  align-items: center;
+}
+.makingStill .makingCloud,
+.makingStill .makingShine {
+  animation-play-state: paused;
+  opacity: 0.25;
+  transition: opacity 0.5s;
+}
+.refusedNotice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
+  animation: refusedRise 0.45s ease-out both;
+}
+@keyframes refusedRise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.refusedMark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-atelier-muted);
+  color: var(--color-atelier-muted);
+  font-size: 15px;
+  line-height: 1;
+}
+
 /* The card coming back with the picture in it. */
 .cardIn {
   animation: makingIn 0.4s ease-out both;
@@ -268,6 +307,7 @@
   .makingCloudA,
   .makingCloudB,
   .makingShine,
+  .refusedNotice,
   .cardIn {
     animation: none;
   }

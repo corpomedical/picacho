@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import styles from "./aly-chat.module.css";
 
@@ -61,6 +62,76 @@ export function CreatingPicture({
         <span className={styles.makingShine} />
         <span className={styles.makingGrain} />
       </div>
+    </div>
+  );
+}
+
+export type RefusedAction = { label: string; primary?: boolean; onClick?: () => void; href?: string };
+
+// A picture that was refused or didn't come out (operator, 2026-10-02: "Tried
+// generating an image and got rejected. I new that because I got the
+// notification on admin app." → drafts at
+// claude.ai/artifact/DFuy1uikVBn425to4wp25n → "2", the frame says it). The
+// frame stays where the picture would have been, its light stops, and the
+// reason sits inside it with what it cost; the next steps go underneath.
+export function RefusedPicture({
+  lead,
+  reason,
+  cost,
+  actions,
+  aspect = "1:1",
+}: {
+  lead: string;
+  reason: string;
+  /** "Nothing was charged." (free) / "1 credit was used."; null when it can't be known. */
+  cost: { text: string; free: boolean } | null;
+  actions: RefusedAction[];
+  aspect?: string;
+}) {
+  const [w, h] = aspect.split(":").map(Number);
+  const chip = (primary?: boolean) =>
+    `rounded-full border px-3.5 py-1.5 text-[13.5px] ${
+      primary ? "border-atelier-accent text-atelier-accent" : "border-atelier-rule text-atelier-ink"
+    } hover:bg-atelier-ink/[0.04]`;
+
+  return (
+    <div className="space-y-2.5" role="alert">
+      <div className={`${styles.makingFrame} ${styles.makingStill}`} style={{ aspectRatio: `${w || 1} / ${h || 1}` }}>
+        <span className={`${styles.makingCloud} ${styles.makingCloudA}`} aria-hidden="true" />
+        <span className={`${styles.makingCloud} ${styles.makingCloudB}`} aria-hidden="true" />
+        <span className={styles.makingShine} aria-hidden="true" />
+        <div className={styles.refusedNotice}>
+          <span className={styles.refusedMark} aria-hidden="true">
+            !
+          </span>
+          <p className="text-base font-semibold text-atelier-ink">{lead}</p>
+          <p className="text-[13.5px] leading-[1.45] text-atelier-ink">{reason}</p>
+          {cost && (
+            <p className="flex items-center gap-1.5 text-[12.5px] text-atelier-muted">
+              <span
+                className={`inline-block h-1.5 w-1.5 rounded-full ${cost.free ? "bg-[#3f9d6a]" : "bg-atelier-muted"}`}
+                aria-hidden="true"
+              />
+              {cost.text}
+            </p>
+          )}
+        </div>
+      </div>
+      {actions.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {actions.map((a) =>
+            a.href ? (
+              <Link key={a.label} href={a.href} className={chip(a.primary)}>
+                {a.label}
+              </Link>
+            ) : (
+              <button key={a.label} type="button" onClick={a.onClick} className={chip(a.primary)}>
+                {a.label}
+              </button>
+            ),
+          )}
+        </div>
+      )}
     </div>
   );
 }

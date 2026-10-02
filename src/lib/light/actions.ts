@@ -7,6 +7,7 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { isBudgetExhaustedDetail, isRawProviderError } from "@/lib/generations/user-facing-error";
 import type { AttemptLog } from "@/lib/generations/pipeline";
+import { forceRefundEligible } from "@/lib/generations/refund-rules";
 import { parseAppLook, parseAppMode } from "./mode";
 
 type SaveResult = { error: string | null };
@@ -56,6 +57,13 @@ export type LightTake = {
   failReason: string | null;
   /** When it was started: a card opened again mid-render counts its clock from here. */
   createdAt: string | null;
+  /**
+   * A failed take that was REFUSED (our content policy, the picture check,
+   * or the provider turning the request away before rendering) rather than
+   * broken: sending the same words again would only be refused again, so the
+   * chat offers "Change the words" and no "Try again".
+   */
+  refused: boolean;
 };
 
 /**
@@ -75,6 +83,12 @@ async function failReasonOf(log: unknown): Promise<string | null> {
   if (isRawProviderError(detail)) return t.generate.stepFailedGeneric;
   if (isBudgetExhaustedDetail(detail)) return t.generate.stepAllAttemptsUsed;
   return localizeServerText(detail, t);
+}
+
+/** The force-refund classes (refund-rules.ts) plus the pipeline's own content gate. */
+function wasRefused(log: unknown): boolean {
+  const attempts = Array.isArray(log) ? (log as AttemptLog[]) : [];
+  return attempts.some((a) => a?.issues?.includes("content_policy")) || forceRefundEligible(attempts);
 }
 
 /**
@@ -107,6 +121,7 @@ export async function getLightTake(id: string): Promise<LightTake | null> {
     modelId: (row.model_id as string | null) ?? null,
     failReason: row.status === "failed" ? await failReasonOf(row.pipeline_log) : null,
     createdAt: (row.created_at as string | null) ?? null,
+    refused: row.status === "failed" && wasRefused(row.pipeline_log),
   };
 }
 

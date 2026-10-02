@@ -19,7 +19,8 @@ import { LIGHT_HOME, studioHref, type LightPrepared } from "@/lib/light/mode";
 import { MenuIcon, PlusIcon, useLightShell } from "./light-shell";
 import { MediaViewer } from "@/components/media-viewer";
 import { AccountMenuButton } from "@/components/account-menu/account-menu";
-import { CreatingPicture } from "@/components/aly-chat/creating-picture";
+import { CreatingPicture, RefusedPicture } from "@/components/aly-chat/creating-picture";
+import { isPolicyRefusal, localizeServerText } from "@/lib/i18n/server-text";
 
 type Kind = "video" | "image";
 type Photo = { url: string; path: string };
@@ -37,6 +38,8 @@ type Turn =
       error: string | null;
       /** Epoch ms it was started: the clock on a picture being made. */
       startedAt: number;
+      /** Turned away before a take existed (runGeneration's own error): it cost nothing. */
+      noTake?: boolean;
     };
 
 export type LightDefaults = {
@@ -312,7 +315,7 @@ export function LightChat({
       return;
     }
     if (result.error !== null) {
-      updateTake(id, { state: "failed", error: result.error });
+      updateTake(id, { state: "failed", error: result.error, noTake: true });
       setText(clean);
       return;
     }
@@ -715,6 +718,42 @@ function TakeTurn({
           ? l.usedOneCredit
           : formatMsg(l.usedCredits, { n: take.creditsUsed.toLocaleString(locale) })
     : null;
+
+  // A picture refused or not come out: the frame says it, as on Aly's cards
+  // (RefusedPicture, operator's pick 2026-10-02). A refusal offers only
+  // "Change the words"; the same words would be refused again.
+  if (turn.state === "failed" && !video) {
+    const err = turn.error;
+    const refused = take ? take.refused : err !== null && isPolicyRefusal(err) && !/could not run just now/.test(err);
+    const reason = take?.failReason ?? (err ? localizeServerText(err, t) : t.generate.stepFailedGeneric);
+    const cost = take
+      ? take.creditsUsed === 0
+        ? { text: t.alyChat.renderNothingCharged, free: true }
+        : {
+            text:
+              take.creditsUsed === 1
+                ? t.alyChat.renderUsedOne
+                : formatMsg(t.alyChat.renderUsed, { credits: take.creditsUsed.toLocaleString(locale) }),
+            free: false,
+          }
+      : turn.noTake
+        ? { text: t.alyChat.renderNothingCharged, free: true }
+        : null;
+    const change = { label: t.alyChat.renderChangeWords, onClick: onAgain, primary: refused };
+    return (
+      <div className="flex items-start gap-4">
+        <Mark />
+        <div className="pl-aly w-[min(300px,60vw)] pt-0.5">
+          <RefusedPicture
+            lead={refused ? t.alyChat.renderRefusedLead : t.alyChat.renderFailedLead}
+            reason={reason}
+            cost={cost}
+            actions={refused ? [change] : [{ label: l.tryAgain, onClick: onRetry, primary: true }, change]}
+          />
+        </div>
+      </div>
+    );
+  }
 
   if (turn.state !== "done" || !take?.resultUrl) {
     return (
