@@ -7,6 +7,7 @@ import {
   requiresReferenceImage,
 } from "../generations/providers/video-models";
 import { WEB_SEARCH_MAX_USES } from "./prices";
+import { checkCardPhotos, type CardPhoto } from "../aly-chat/card-photos-rules";
 
 // The Producer's tools (2026-09-24). Alias-free so the validation can be
 // unit-tested.
@@ -110,10 +111,26 @@ export const PRODUCER_TOOLS = [
     input_schema: {
       type: "object",
       additionalProperties: false,
-      required: ["kind", "character_id", "prompt", "video_model_id", "seconds", "label"],
+      required: ["kind", "character_id", "prompt", "video_model_id", "seconds", "label", "photos"],
       properties: {
         kind: { type: "string", enum: ["image", "video"] },
         character_id: { ...nullableString, description: "The character's id, or null for a shot with no character." },
+        // A plain list, not a nullable one: the API caps union-typed
+        // parameters across strict tools at 16 (producer.test.ts).
+        photos: {
+          type: "array",
+          description:
+            "For a picture: photos they attached in this chat that go INTO the picture, each with its job (person = the person in the shot, product = a thing they hold or show), by the photo id shown beside each attached picture. Empty when none ride.",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["file_id", "role"],
+            properties: {
+              file_id: { type: "string", description: "The photo id shown beside the attached picture." },
+              role: { type: "string", enum: ["person", "product"] },
+            },
+          },
+        },
         prompt: { type: "string", description: "What to render, in plain words, as the person would type it." },
         video_model_id: { ...nullableString, description: "For a video: the model id from the catalogue. Null for an image." },
         seconds: { ...nullableInt, description: "For a video: a length that model offers. Null for its default." },
@@ -341,6 +358,8 @@ export type PreparedSend = {
   seconds: number | null;
   credits: number;
   href: string;
+  /** Pictures attached in the chat that ride into the render, each with its job (card-photos-rules.ts). */
+  photos?: CardPhoto[];
 };
 
 // The composer accepts 5,000 characters; a prepared shot is a sentence or
@@ -375,6 +394,8 @@ export function validatePreparedSend(
   newId: () => string,
   /** Video models taken off the menu on the Models page (model_controls.off.video). */
   offVideo: readonly string[] = [],
+  /** The pictures attached in this chat, which photos may name (none where there is no chat). */
+  chatPictures: readonly { id: string; name: string }[] = [],
 ): { card: PreparedSend } | { error: string } {
   const kind = input.kind === "image" || input.kind === "video" ? input.kind : null;
   if (!kind) return { error: "kind must be image or video." };
@@ -397,6 +418,9 @@ export function validatePreparedSend(
     characterName = found.name;
   }
 
+  const checkedPhotos = checkCardPhotos(input.photos, chatPictures, kind, characterId);
+  if ("error" in checkedPhotos) return { error: checkedPhotos.error };
+
   if (kind === "image") {
     const card: PreparedSend = {
       id: newId(),
@@ -410,6 +434,7 @@ export function validatePreparedSend(
       seconds: null,
       credits: 1,
       href: "",
+      ...(checkedPhotos.photos.length ? { photos: checkedPhotos.photos } : {}),
     };
     card.href = composerHref(card);
     return { card };

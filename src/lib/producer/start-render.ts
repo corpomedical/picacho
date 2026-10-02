@@ -4,6 +4,7 @@ import { runGeneration } from "@/lib/generations/actions";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
 import { DEFAULT_IMAGE_ASPECT, DEFAULT_IMAGE_QUALITY, defaultImageResolution } from "@/lib/generations/providers/image-resolution";
 import { cardGenerationId, type StartableCard } from "./start-card";
+import { cardPhotoRoles } from "@/lib/aly-chat/card-photos";
 
 // Aly starts one of her own cards (operator, 2026-10-01: "I tell her I cant
 // touch the phone you do it for me, she says she cant. I asked she takes
@@ -35,6 +36,10 @@ export async function startCardRender(supabase: SupabaseClient, userId: string, 
   const workspace = await getGenerateWorkspaceData(supabase as never, userId);
   const model = workspace.videoModels.find((m) => m.id === workspace.defaultVideoModelId);
 
+  // The card's chat photos ride in as the composer's attachments would (card-photos.ts).
+  const photos = card.kind === "image" ? await cardPhotoRoles(userId, card.photos ?? []) : { roles: [] };
+  if ("error" in photos) return { state: "failed", generationId, error: photos.error };
+
   const fd = new FormData();
   fd.set("generation_id", generationId);
   fd.set("prompt", card.prompt);
@@ -47,6 +52,7 @@ export async function startCardRender(supabase: SupabaseClient, userId: string, 
     fd.set("image_resolution", defaultImageResolution(workspace.defaultImageModelId));
     fd.set("image_aspect", DEFAULT_IMAGE_ASPECT);
     fd.set("image_quality", DEFAULT_IMAGE_QUALITY);
+    if (photos.roles.length) fd.set("attachment_roles", JSON.stringify(photos.roles));
   } else {
     fd.set("video_model_id", card.modelId ?? workspace.defaultVideoModelId);
     fd.set(

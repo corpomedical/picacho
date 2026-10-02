@@ -9,6 +9,9 @@ import { canChangeKept, parseRow, type StoredRow } from "./history";
 import { isBrain } from "./brains";
 import { MAX_DOC_CHARS } from "./docs";
 import { FILES_BUCKET } from "./store";
+import { readCardPhotos } from "./card-photos-rules";
+import { cardPhotoRoles, type RenderRoleEntry } from "./card-photos";
+import { toMediaUrl } from "@/lib/media/url";
 
 // The chat page's small writes (2026-09-29). Every one takes the user from
 // the session and scopes every row to it; the tables give a session SELECT
@@ -122,6 +125,36 @@ export async function chatFileLink(id: string): Promise<{ url: string } | Fail> 
   if (!row) return { error: "That file isn't there." };
   const { data } = await admin.storage.from(FILES_BUCKET).createSignedUrl(row.storage_path as string, 600);
   return data?.signedUrl ? { url: data.signedUrl } : { error: "That file isn't there." };
+}
+
+// ---- Picture cards (2026-10-02) ----------------------------------------------
+
+/**
+ * A picture card's photos, with the jobs the person left them on, as the
+ * renderer's attachment_roles (card-photos.ts copies each into reach).
+ */
+export async function cardPhotoRolesFor(photos: unknown): Promise<{ roles: RenderRoleEntry[] } | Fail> {
+  const w = await who();
+  if ("error" in w) return w;
+  return cardPhotoRoles(w.userId, readCardPhotos(photos));
+}
+
+/** Their saved characters for a card's "who" menu: name and first photo. */
+export async function cardCast(): Promise<{ id: string; name: string; photoUrl: string | null }[]> {
+  const supabase = await createClient();
+  const { data: u } = await supabase.auth.getUser();
+  if (!u.user) return [];
+  const { data } = await supabase
+    .from("character_profiles")
+    .select("id, name, reference_image_urls")
+    .eq("user_id", u.user.id)
+    .order("created_at", { ascending: true })
+    .limit(100);
+  return (data ?? []).map((c) => ({
+    id: c.id as string,
+    name: String(c.name ?? ""),
+    photoUrl: toMediaUrl(Array.isArray(c.reference_image_urls) ? ((c.reference_image_urls[0] as string | undefined) ?? null) : null),
+  }));
 }
 
 // ---- Chats --------------------------------------------------------------------

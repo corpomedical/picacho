@@ -73,8 +73,10 @@ export function keptText(c: AssistantContent): string {
   return keptLane(c)?.text?.trim() || NO_ANSWER;
 }
 
+// A picture carries its id, so a picture card can name it as a photo that
+// rides into the render (card-photos-rules.ts, 2026-10-02).
 function fileLabel(f: FileRef): string {
-  return `Attached file: ${f.name}`;
+  return f.kind === "image" ? `Attached file: ${f.name} (photo id ${f.id})` : `Attached file: ${f.name}`;
 }
 
 // ---------------------------------------------------------------------------

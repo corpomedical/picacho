@@ -30,6 +30,7 @@ const card = (over: Partial<StartableCard> = {}): StartableCard => ({
   seconds: 5,
   credits: 4,
   generationId: null,
+  photos: [],
   ...over,
 });
 

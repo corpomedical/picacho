@@ -3,6 +3,7 @@
 // which stay on the server. Client-safe; relative imports only.
 
 import type { Brain, BrainChoice } from "./brains";
+import type { CardPhoto } from "./card-photos-rules";
 import type { FileRef, Source, StoredRow } from "./history";
 
 export type ViewLane = {
@@ -28,6 +29,8 @@ export type ViewRender = {
   credits: number;
   href: string;
   generationId?: string | null;
+  /** Chat pictures that ride into the render (card-photos-rules.ts). */
+  photos?: CardPhoto[];
 };
 
 export type ViewMsg =

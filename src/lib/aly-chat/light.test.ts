@@ -27,8 +27,13 @@ describe("Aly in Picacho Light", () => {
     expect(rules).toContain("in Picacho Light's chat");
     expect(rules).toContain("PICACHO LIGHT\nThe person uses Picacho Light");
     // The photo exception, and where a photo goes in.
-    expect(rules).toContain("it waits on its card for them to tap Make it");
-    expect(rules).toContain('"Change it first" on the card');
+    expect(rules).toContain("it waits on its card, where they check each photo's job and who is in it, and tap Make it");
+    // 2026-10-02: attached photos ride into the picture, and a saved character is never her own guess.
+    expect(rules).toContain("WHO IS IN IT");
+    expect(rules).toContain("An attached photo of a person IS the person");
+    expect(rules).not.toContain("can't take their photo");
+    // (Read from source here, so the shared paragraph shows as its name.)
+    expect(CHAT_RULES).toContain("${PHOTOS_AND_WHO}");
     // Everything else she is stays, documents and ads included (Light shows both).
     for (const part of ["web_search", "DOCUMENTS (THE SIDE PANEL)", "MEMORY", "FILES", "plan_press_ad"]) expect(rules).toContain(part);
     // Taking them to a page (open_page, 2026-09-29) survives Light's rewording too.

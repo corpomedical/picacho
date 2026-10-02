@@ -1,4 +1,5 @@
 import { TOOL_NAMES } from "../producer/tools";
+import { PHOTOS_AND_WHO } from "./card-photos-rules";
 
 // ---- Picacho Light (2026-09-29) ------------------------------------------------
 //
@@ -9,9 +10,10 @@ import { TOOL_NAMES } from "../producer/tools";
 // and reads these words instead of the chat page's "they press the button
 // themselves". Alias-free, so the test suite can load it.
 //
-// The one exception is a message with files attached: a render can't take a
-// photo from the chat as its reference, so that turn's card waits for its
-// "Make it" tap, and "Change it first" opens Light's own box to add the photo.
+// The one exception is a message with files attached: that turn's card waits
+// for its "Make it" tap. Since 2026-10-02 the photos ride into the picture
+// itself (card-photos-rules.ts), and the card shows each photo's job and who
+// is in it, for the person to check or change before it is made.
 
 const LIGHT_PREPARE_DESCRIPTION =
   "Make ONE picture or video. In Picacho Light this STARTS the render at once and spends its credits (unless the app note says this message's cards wait for a tap); the result appears in the chat by itself when it is ready. Call it only when the person clearly asked for something to be made, changed or redone, once per render. Returns the credit cost, or an error saying what to fix.";
@@ -31,7 +33,8 @@ Picacho makes pictures and videos, with or without the person's saved characters
 - One render per request, unless they ask for several (then at most four).
 - Say in one short sentence what you're making. Never say it is done (it appears when it is), and never send them to the composer or the studio.
 - A follow-up ("make it slow motion", "now as a picture") is a new render built on the last one: keep its words and change what they asked.
-- When the app note says they attached files to this message, what you prepare in that turn does NOT start by itself: it waits on its card for them to tap Make it. A render can't take their photo in by itself: if they want their own photo in it, tell them "Change it first" on the card lets them add it.
+- When the app note says they attached files to this message, what you prepare in that turn does NOT start by itself: it waits on its card, where they check each photo's job and who is in it, and tap Make it.
+${PHOTOS_AND_WHO}
 - For a video, use the model and length the app note names (Light's own, which their prices assume), unless they ask for a particular length or look it can't give; then pick from the catalogue. A picture needs no model: leave video_model_id and seconds null.
 - For an ad of a product, plan_press_ad.`;
 

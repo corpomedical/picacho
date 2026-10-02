@@ -78,6 +78,8 @@ export type ToolContext = {
   };
   /** press_button needs a browser to press in: the lamp has one, the chat page doesn't offer it. */
   canPress?: boolean;
+  /** The chat page and Light: the pictures attached in this chat, which a picture card may carry into the render. */
+  chatPictures?: readonly { id: string; name: string }[];
 };
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -164,13 +166,20 @@ async function look(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
 }
 
 async function prepare(ctx: ToolContext, call: ToolCall): Promise<ToolOutcome> {
-  const checked = validatePreparedSend(asRecord(call.input), await cast(ctx), () => randomUUID().slice(0, 8), await offVideoModels());
+  const checked = validatePreparedSend(
+    asRecord(call.input),
+    await cast(ctx),
+    () => randomUUID().slice(0, 8),
+    await offVideoModels(),
+    ctx.chatPictures ?? [],
+  );
   if ("error" in checked) return errorResult(call.id, checked.error);
   const c = checked.card;
+  const riding = (c.photos ?? []).map((p) => `their ${p.role} photo`).join(" and ");
   const what =
     c.kind === "video"
       ? `${c.modelName}, ${c.seconds}s, ${c.credits} credit${c.credits === 1 ? "" : "s"}`
-      : `image, ${c.credits} credit`;
+      : `image, ${c.credits} credit${riding ? `, using ${riding}` : ""}`;
   return {
     result: {
       type: "tool_result",

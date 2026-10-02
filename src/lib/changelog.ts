@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.217.0",
+    build: 256,
+    date: "2026-10-02",
+    title: "Your photos go into the picture, and Aly asks who is in it",
+    items: [
+      "In Aly's chat and in Picacho Light, photos you attach now go into the picture itself. Before, Aly only described them in words, so a product shot came back with a made-up box. A picture card shows each photo with its job, Person or Product, and a tap changes it or sets it to Not used.",
+      "Aly no longer puts one of your saved characters in a picture on her own. An attached photo of a person is the person. She uses a character when you name one, and asks who it should be when nobody is named and no person photo is attached. The card shows who is in it (your photo, a character or no one), and a tap switches it before you press Make it.",
+      "When only the picture engine's own filter refuses a picture, after Picacho's own check found nothing wrong with it, the frame now says so and offers to try another engine: \"Try on Seedream 5.0 Pro · 1 credit\" (or GPT Image, when Seedream was the one that refused). You choose; nothing switches by itself. Anything Picacho's own check refuses stays refused, with no other engine offered. Free accounts, which use one engine, don't see the offer.",
+      "A new attempt on a card now shows its own outcome, and \"Try again\" stays on the engine you last picked.",
+    ],
+  },
+  {
     version: "1.216.0",
     build: 255,
     date: "2026-10-02",

@@ -276,8 +276,10 @@ export async function POST(request: NextRequest) {
   // ---- The person's message, saved first ----------------------------------------
   const timeZone = typeof body?.timeZone === "string" ? body.timeZone.slice(0, 64) : null;
   // In a Light chat a render she makes starts at once, except in a message
-  // with files (a render can't take a photo from the chat): the note says
-  // which, and the page follows the same rule (chat-view.tsx autoStartRenders).
+  // with files: those photos can ride into the picture (card-photos-rules.ts),
+  // so the card waits for the person to check each photo's job and who is in
+  // it. The note says which, and the page follows the same rule
+  // (chat-view.tsx autoStartRenders).
   const lightStartsNow = setup.light === true && newRefs.length === 0;
   const lightNote = setup.light
     ? lightTurnNote({ files: newRefs.length, video: body?.lightNote && typeof body.lightNote === "object" ? body.lightNote.video : null })
@@ -285,6 +287,11 @@ export async function POST(request: NextRequest) {
   // Their characters with ids, so prepare_send can attach one (history.ts
   // castNote: in full when the list changed since the last note in this chat).
   const cast = await loadCast(supabase, user.id);
+  // The pictures attached anywhere in this chat: a picture card may carry
+  // them into the render by the photo id each one is labelled with (history.ts).
+  const chatPictures = [...rows.flatMap((r) => (r.role === "user" ? r.content.files : [])), ...newRefs]
+    .filter((f) => f.kind === "image")
+    .map((f) => ({ id: f.id, name: f.name }));
   const userContent: UserContent = {
     text,
     files: newRefs,
@@ -370,7 +377,7 @@ export async function POST(request: NextRequest) {
             return { content: "The document couldn't be saved just now. Put it in the chat instead.", isError: true };
           }
         }
-        const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp, pageAccess, hands }, c);
+        const o = await runTool({ supabase, admin, userId: user.id, topUpUnits: reserved.topUp, pageAccess, hands, chatPictures }, c);
         if (o.card) {
           cards.push(o.card);
           send("card", o.card);

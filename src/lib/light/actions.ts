@@ -8,6 +8,10 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 import { isBudgetExhaustedDetail, isRawProviderError } from "@/lib/generations/user-facing-error";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { forceRefundEligible } from "@/lib/generations/refund-rules";
+import { otherPictureEngine, refusedByEngineOnly } from "@/lib/generations/engine-refusal";
+import { getImageModel } from "@/lib/generations/providers/image-models";
+import { DEFAULT_IMAGE_QUALITY, defaultImageResolution, imageRenderCreditWeight } from "@/lib/generations/providers/image-resolution";
+import { offered } from "@/lib/models/controls";
 import { parseAppLook, parseAppMode } from "./mode";
 
 type SaveResult = { error: string | null };
@@ -64,6 +68,14 @@ export type LightTake = {
    * chat offers "Change the words" and no "Try again".
    */
   refused: boolean;
+  /**
+   * A picture only the ENGINE's filter refused, after Picacho's own check
+   * found nothing (engine-refusal.ts): the other engine the chat may offer,
+   * and its price. Null for every other failure, for a free account (pinned
+   * to one engine, so a "try another" would render on the same one), and
+   * when that engine is off the Models menu.
+   */
+  tryOther: { modelId: string; name: string; credits: number } | null;
 };
 
 /**
@@ -89,6 +101,26 @@ async function failReasonOf(log: unknown): Promise<string | null> {
 function wasRefused(log: unknown): boolean {
   const attempts = Array.isArray(log) ? (log as AttemptLog[]) : [];
   return attempts.some((a) => a?.issues?.includes("content_policy")) || forceRefundEligible(attempts);
+}
+
+/** The other picture engine for an engine-only refusal, when this person may use it (see LightTake.tryOther). */
+async function tryOtherFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  row: { status: unknown; content_type: unknown; model_id: unknown; pipeline_log: unknown },
+): Promise<LightTake["tryOther"]> {
+  if (row.status !== "failed" || row.content_type !== "image" || !refusedByEngineOnly(row.pipeline_log)) return null;
+  // actions.ts's own test for a free account, which it pins to one engine whatever the form asks.
+  const { data: p } = await supabase.from("profiles").select("plan, bonus_credits, purchased_credits, role").eq("id", userId).maybeSingle();
+  const free = (p?.plan ?? "none") === "none" && (p?.bonus_credits ?? 0) === 0 && (p?.purchased_credits ?? 0) === 0 && p?.role !== "admin";
+  if (free) return null;
+  const modelId = otherPictureEngine((row.model_id as string | null) ?? null);
+  if (!(await offered("picture", modelId))) return null;
+  return {
+    modelId,
+    name: getImageModel(modelId).name,
+    credits: imageRenderCreditWeight(modelId, defaultImageResolution(modelId), DEFAULT_IMAGE_QUALITY),
+  };
 }
 
 /**
@@ -122,6 +154,7 @@ export async function getLightTake(id: string): Promise<LightTake | null> {
     failReason: row.status === "failed" ? await failReasonOf(row.pipeline_log) : null,
     createdAt: (row.created_at as string | null) ?? null,
     refused: row.status === "failed" && wasRefused(row.pipeline_log),
+    tryOther: await tryOtherFor(supabase, userData.user.id, row),
   };
 }
 

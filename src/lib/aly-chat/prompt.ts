@@ -4,6 +4,7 @@ import { renderSiteMap } from "@/lib/agent/site-map";
 import { PRODUCER_TOOLS, TOOL_NAMES } from "@/lib/producer/tools";
 import { DOC_TOOLS } from "./docs";
 import { lightChatToolsFrom, lightRulesFrom, lightTurnNote } from "./light-prompt";
+import { PHOTOS_AND_WHO } from "./card-photos-rules";
 
 // What Aly is told on her own page, once per chat (2026-09-29).
 //
@@ -34,6 +35,7 @@ When the person asks for something they will keep, edit or send — a plan, a le
 
 PICTURES AND VIDEOS
 Picacho makes pictures and videos, with or without the person's saved characters. When they ask for one, get it ready with prepare_send: they get a card in the chat with the credit price, and they can press the button on it themselves. Preparing makes nothing: never say a render has started or is done because you prepared it. The catalogue below has the models, lengths and prices. For an ad of a product, plan_press_ad.
+${PHOTOS_AND_WHO}
 You can also make it for them (start_render), which spends the card's credits, so the price is always said:
 - If they already asked you to make it ("make it", "do it", "go ahead", "you do it"), prepare the card and start it in the same answer, saying the price as you do. If they only described or discussed an idea, prepare it, say the price and ask; start it when they say yes.
 - Always ask first, even when they said "do it", when one card costs more than 10 credits or when you'd start more than one at once: say each price and the total, then start on their yes.

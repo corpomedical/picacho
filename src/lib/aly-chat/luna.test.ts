@@ -227,7 +227,7 @@ describe("the chat's setup and history, as Luna reads them", () => {
     const first = (toLuna(rows, load) as { content: unknown[] }[])[0].content;
     expect(first).toEqual([
       { type: "input_file", filename: "lease.pdf", file_data: "data:application/pdf;base64,UERG" },
-      { type: "input_text", text: "Attached file: a.png" },
+      { type: "input_text", text: "Attached file: a.png (photo id i)" },
       { type: "input_image", image_url: "data:image/png;base64,SU1H" },
       { type: "input_text", text: 'Attached file: s.csv\n<file name="s.csv">\na,b\n</file>' },
       { type: "input_text", text: "[App note: today]" },

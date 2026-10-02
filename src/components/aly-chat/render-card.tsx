@@ -8,7 +8,9 @@ import { runGeneration, pollGeneration, requestGenerationCancel } from "@/lib/ge
 import { getLightTake, type LightTake } from "@/lib/light/actions";
 import { DEFAULT_IMAGE_ASPECT, DEFAULT_IMAGE_QUALITY, defaultImageResolution } from "@/lib/generations/providers/image-resolution";
 import { isStaleDeployError } from "@/lib/stale-deploy";
-import { linkRender } from "@/lib/aly-chat/actions";
+import { cardPhotoRolesFor, linkRender } from "@/lib/aly-chat/actions";
+import { choiceToSend, startChoice, withJob, withWho, type CardChoice } from "@/lib/aly-chat/card-photos-rules";
+import { CardWhoAndPhotos } from "./card-who";
 import type { ViewRender } from "@/lib/aly-chat/view";
 import type { LightDefaults } from "@/components/light/light-chat";
 import { useInLight } from "@/components/light/in-light";
@@ -66,6 +68,10 @@ export function RenderCard({
   const [startedAt, setStartedAt] = useState(() => Date.now());
   // The card coming back with the picture it just made (not one reopened).
   const [cameIn, setCameIn] = useState(false);
+  // A picture card's photos and who is in it, as the person leaves them
+  // before Make it (card-who.tsx; Aly's pick until they change it).
+  const photos = card.kind === "image" ? (card.photos ?? []) : [];
+  const [choice, setChoice] = useState<CardChoice>(() => startChoice(photos, card.characterId, card.characterName));
   const alive = useRef(true);
 
   useEffect(() => {
@@ -164,11 +170,32 @@ export function RenderCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function make() {
+  // The engine the last attempt asked for, so "Try again" stays on it.
+  const lastEngine = useRef<string | undefined>(undefined);
+
+  /** Make it; `imageModelId` is "Try on <engine>" after an engine-only refusal (engine-refusal.ts). */
+  async function make(imageModelId?: string) {
     if (card.kind === "ad" || state === "working") return;
+    lastEngine.current = imageModelId;
     setError(null);
     setNoTake(false);
+    // A new attempt is judged on its own take: the last one's refusal (and
+    // its "Try on" offer) must not stand in for this one's outcome.
+    setTake(null);
     setState("working");
+    const send = choiceToSend(choice, photos);
+    // The photos are copied where the renderer can read them first (card-photos.ts).
+    let roles: { url: string; role: string }[] = [];
+    if (send.photos.length) {
+      const r = await cardPhotoRolesFor(send.photos).catch(() => ({ error: t.generate.submitFailed }));
+      if ("error" in r) {
+        setError(r.error);
+        setNoTake(true);
+        setState("failed");
+        return;
+      }
+      roles = r.roles;
+    }
     setStartedAt(Date.now());
     setMaking(true);
     setCameIn(false);
@@ -178,14 +205,16 @@ export function RenderCard({
     fd.set("generation_id", id);
     fd.set("prompt", card.prompt);
     fd.set("content_type", card.kind);
-    fd.set("character_id", card.characterId ?? "");
+    fd.set("character_id", card.kind === "image" ? (send.characterId ?? "") : (card.characterId ?? ""));
     fd.set("use_outfit", "0");
     fd.set("payload_version", "2");
     if (card.kind === "image") {
-      fd.set("image_model_id", defaults.imageModelId);
-      fd.set("image_resolution", defaultImageResolution(defaults.imageModelId));
+      const engine = imageModelId ?? defaults.imageModelId;
+      fd.set("image_model_id", engine);
+      fd.set("image_resolution", defaultImageResolution(engine));
       fd.set("image_aspect", DEFAULT_IMAGE_ASPECT);
       fd.set("image_quality", DEFAULT_IMAGE_QUALITY);
+      if (roles.length) fd.set("attachment_roles", JSON.stringify(roles));
     } else {
       fd.set("video_model_id", card.modelId ?? defaults.videoModelId);
       fd.set("video_duration_seconds", String(card.seconds ?? defaults.videoDurationSeconds));
@@ -222,7 +251,9 @@ export function RenderCard({
         ? c.renderChargedOne
         : formatMsg(c.renderCharged, { credits: take.creditsUsed })
     : "";
-  const meta = [card.characterName, card.modelName, card.seconds ? formatMsg(c.renderSeconds, { n: card.seconds }) : null]
+  // Before Make it a picture card shows who is in it on its own switch (card-who.tsx), so the meta line leaves the name out.
+  const switching = state === "ready" && card.kind === "image";
+  const meta = [switching ? null : card.characterName, card.modelName, card.seconds ? formatMsg(c.renderSeconds, { n: card.seconds }) : null]
     .filter(Boolean)
     .join(" · ");
 
@@ -262,9 +293,29 @@ export function RenderCard({
     const change = { label: c.renderChangeWords, href: openHref, primary: refused };
     const again = {
       label: card.credits === 1 ? c.renderTryAgainOne : formatMsg(c.renderTryAgain, { credits: card.credits }),
-      onClick: () => void make(),
+      onClick: () => void make(lastEngine.current),
       primary: true,
     };
+    // Only the engine's filter said no, after Picacho's own check found
+    // nothing: the other engine is offered, with its price (fix 1B,
+    // 2026-10-02; engine-refusal.ts says why this is not filter-shopping).
+    const other = take?.tryOther ?? null;
+    if (other) {
+      const tryOn = {
+        label: formatMsg(other.credits === 1 ? c.renderTryOnOne : c.renderTryOn, { engine: other.name, credits: other.credits }),
+        onClick: () => void make(other.modelId),
+        primary: true,
+      };
+      return (
+        <RefusedPicture
+          lead={c.renderEngineLead}
+          reason={c.renderEngineWhy}
+          cost={cost}
+          actions={[tryOn, { ...change, primary: false }]}
+          aspect={DEFAULT_IMAGE_ASPECT}
+        />
+      );
+    }
     return (
       <RefusedPicture
         lead={refused ? c.renderRefusedLead : c.renderFailedLead}
@@ -322,6 +373,24 @@ export function RenderCard({
       <div className="space-y-1.5 p-3">
         <p className="text-sm font-medium text-atelier-ink">{card.label}</p>
         {meta && <p className="text-xs text-atelier-muted">{meta}</p>}
+        {switching && (
+          <CardWhoAndPhotos
+            photos={photos}
+            choice={choice}
+            onJob={(fileId, job) => setChoice((ch) => withJob(ch, fileId, job))}
+            onWho={(who) => setChoice((ch) => withWho(ch, photos, who))}
+            labels={{
+              who: c.renderWho,
+              whoPhoto: c.renderWhoPhoto,
+              whoNoOne: c.renderWhoNoOne,
+              usesPhotos: c.renderUsesPhotos,
+              photoJob: c.renderPhotoJob,
+              person: c.renderRolePerson,
+              product: c.renderRoleProduct,
+              unused: c.renderRoleUnused,
+            }}
+          />
+        )}
         {state === "failed" && <p className="text-xs text-red-500">{formatMsg(c.renderFailed, { error: error ?? "" }).trim()}</p>}
         {state === "stopped" && <p className="text-xs text-atelier-muted">{c.renderStopped}</p>}
         {state === "done" && charged && <p className="text-xs text-atelier-muted">{charged}</p>}

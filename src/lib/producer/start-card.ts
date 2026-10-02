@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { readCardPhotos, type CardPhoto } from "../aly-chat/card-photos-rules";
 
 // start_render's rules (operator, 2026-10-01: "I asked she takes control so
 // the user works hands free" → "Say price, then go"). Alias-free, so it's
@@ -26,6 +27,8 @@ export type StartableCard = {
   credits: number;
   /** Already made (its button was pressed, or she started it before). */
   generationId: string | null;
+  /** Chat pictures that ride into the render (card-photos-rules.ts). */
+  photos: CardPhoto[];
 };
 
 export const MAX_STARTS_PER_TURN = 4;
@@ -62,6 +65,7 @@ export function cardsIn(rows: readonly unknown[], field: "cards" | "renders"): S
         seconds: typeof r.seconds === "number" ? r.seconds : null,
         credits: typeof r.credits === "number" && Number.isFinite(r.credits) ? r.credits : 0,
         generationId: typeof r.generationId === "string" ? r.generationId : null,
+        photos: kind === "image" ? readCardPhotos(r.photos) : [],
       });
     }
   }
