@@ -49,10 +49,7 @@ export default async function AdminPaymentsPage({ searchParams }: { searchParams
         <div className="min-w-0 flex-1">
           <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Money</p>
           <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Payments &amp; disputes</h1>
-          <p className="mt-1 text-sm text-atelier-muted">
-            Straight from Stripe: the last 100 charges and recent disputes, matched to Picacho accounts. Refund or answer
-            a dispute in Stripe — every row opens it there.
-          </p>
+          <p className="mt-1 text-sm text-atelier-muted">The last 100 charges and recent disputes, straight from Stripe.</p>
         </div>
         <a
           href="/admin/payments/export"

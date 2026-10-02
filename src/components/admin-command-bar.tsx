@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type SVGProps } from "react";
+import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
@@ -14,13 +14,12 @@ import { Logo } from "@/components/logo";
 // scroll on its own) plus a Cmd+K palette for typing to jump to a page —
 // the fastest path once you know the tool, which fits an admin area used by
 // exactly one person.
-// THE LEDGER (operator pick B, 2026-09-03): on md+ this component is the
-// grouped left rail in the product's own house style — fifteen flat tabs
-// became six groups (Overview · People · Trust & Safety · Money · Product ·
-// System). The horizontal icon strip below survives only under md, where a
-// rail has no room; the ⌘K palette and the live badge polling are shared by
-// both. NAV_ITEMS stays the flat source of truth for the palette and the
-// mobile strip; NAV_GROUPS is the same items, grouped.
+// THE LEDGER (operator pick B, 2026-09-03) grouped fifteen flat tabs into
+// six groups. APPLE (2026-10-02, draft D): on md+ the groups are a frosted
+// macOS sidebar with coloured icon tiles and the current page in system
+// blue; on a phone a top bar's Menu button opens the palette, which lists
+// every page with its count. NAV_ITEMS stays the flat source of truth for the
+// palette; NAV_GROUPS is the same items, grouped.
 const NAV_ITEMS = [
   { href: "/admin", label: "Overview", icon: HomeIcon },
   { href: "/admin/users", label: "Users", icon: UsersIcon },
@@ -44,6 +43,31 @@ const NAV_ITEMS = [
   { href: "/admin/activity", label: "Activity log", icon: ClockIcon },
   { href: "/admin/updates", label: "Updates", icon: SparklesIcon },
 ] as const;
+
+// Icon tile colours (macOS System Settings style), by page.
+const TILE: Record<string, string> = {
+  "/admin": "#0a84ff",
+  "/admin/users": "#5e5ce6",
+  "/admin/feedback": "#30b0c7",
+  "/admin/reports": "#ff453a",
+  "/admin/moderation": "#636366",
+  "/admin/billing": "#34c759",
+  "/admin/payments": "#30d158",
+  "/admin/promo": "#ff9f0a",
+  "/admin/stats": "#ff9f0a",
+  "/admin/models": "#bf5af2",
+  "/admin/providers": "#5e5ce6",
+  "/admin/voices": "#ff375f",
+  "/admin/product-checks": "#ac8e68",
+  "/admin/flags": "#64d2ff",
+  "/admin/updates": "#ffcc00",
+  "/admin/emails": "#0a84ff",
+  "/admin/renders": "#ff9f0a",
+  "/admin/system": "#ff453a",
+  "/admin/activity": "#8e8e93",
+  "/admin/settings": "#8e8e93",
+  "/admin/security": "#636366",
+};
 
 const NAV_GROUPS: { label: string | null; hrefs: string[] }[] = [
   { label: null, hrefs: ["/admin"] },
@@ -81,24 +105,6 @@ const BADGE_NOTICE: Record<string, (n: number) => string> = {
   "/admin/reports": (n) => (n === 1 ? "New report" : `${n} new reports`),
   "/admin/feedback": (n) => (n === 1 ? "New feedback" : `${n} new feedback messages`),
 };
-
-// iOS-style unread dot: iOS system red, a thin white keyline separating it
-// from whatever's behind it, and — the actual bug report — pushed further
-// out toward the corner (-2.5 instead of -1) so it perches on the icon's
-// edge instead of sitting on top of it and blocking the glyph. Stays a
-// circle up to 9, then naturally becomes a small pill for "9+" via
-// min-width + rounded-full, same as iOS badges do past a single digit.
-function NotificationBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <span
-      aria-label={`${count} notification${count === 1 ? "" : "s"}`}
-      className="absolute -right-2.5 -top-2.5 z-10 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[#FF3B30] px-[3px] text-[10px] font-bold leading-none text-onmedia ring-[1.5px] ring-white"
-    >
-      {count > 9 ? "9+" : count}
-    </span>
-  );
-}
 
 // The live-notification pill for the admin area -- same pill shape, color,
 // shadow and enter/exit timing as ComposerToast in generate-form.tsx (the
@@ -165,53 +171,6 @@ export function AdminCommandBar({
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const noticeIdRef = useRef(0);
 
-  // Horizontal scroll affordances for the icon nav (Material/Google-tabs
-  // style): chevrons that appear only when there's more to scroll in that
-  // direction, fade with the scroll position, and scroll smoothly on click.
-  const navRef = useRef<HTMLElement | null>(null);
-  const [canLeft, setCanLeft] = useState(false);
-  const [canRight, setCanRight] = useState(false);
-
-  const updateArrows = useCallback(() => {
-    const el = navRef.current;
-    if (!el) return;
-    // 1px slack so sub-pixel rounding at the ends doesn't leave an arrow
-    // stuck visible when you're already fully scrolled that way.
-    setCanLeft(el.scrollLeft > 1);
-    setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-  }, []);
-
-  useEffect(() => {
-    const el = navRef.current;
-    if (!el) return;
-    // Center the active tab on load so the current page is always visible
-    // even when it lives off the right edge. Adjusts only the nav's own
-    // scrollLeft (via rects) — never scrollIntoView, which can nudge the
-    // whole page.
-    const activeEl = el.querySelector<HTMLElement>('[aria-current="page"]');
-    if (activeEl) {
-      const elRect = el.getBoundingClientRect();
-      const aRect = activeEl.getBoundingClientRect();
-      el.scrollLeft += aRect.left + aRect.width / 2 - (elRect.left + elRect.width / 2);
-    }
-    updateArrows();
-    const ro = new ResizeObserver(updateArrows);
-    ro.observe(el);
-    window.addEventListener("resize", updateArrows);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", updateArrows);
-    };
-  }, [updateArrows, pathname]);
-
-  const scrollNav = useCallback((direction: 1 | -1) => {
-    const el = navRef.current;
-    if (!el) return;
-    // Scroll by most of a viewport so a click makes real progress, but keep a
-    // sliver of overlap so you never lose your place between clicks.
-    el.scrollBy({ left: direction * Math.max(180, el.clientWidth * 0.75), behavior: "smooth" });
-  }, []);
-
   // Polls getAdminBadgeCounts on a timer so the red dots (and this drop-down
   // banner) update while the page just sits open, instead of only refreshing
   // on the next navigation. A plain interval rather than Supabase Realtime —
@@ -242,6 +201,8 @@ export function AdminCommandBar({
     }, BADGE_POLL_MS);
     return () => clearInterval(id);
   }, []);
+
+  const totalCount = Object.values(badges).reduce((n, c) => n + (c ?? 0), 0);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -322,43 +283,46 @@ export function AdminCommandBar({
         />
       )}
 
-      <aside className="sticky top-0 hidden h-screen w-[232px] flex-shrink-0 flex-col border-r border-atelier-rule bg-atelier-surface/70 px-3 pb-16 pt-6 backdrop-blur-xl md:flex">
-        <Link href="/admin" className="block px-2.5">
-          <Logo className="h-5" />
-          <span className="mt-1.5 block text-[9.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
-            Admin · Ledger
-          </span>
+      {/* The frosted sidebar (macOS), md and up: coloured icon tiles, the
+          page you're on filled in system blue (admin-apple.css). */}
+      <aside
+        data-admin-rail
+        className="sticky top-0 hidden h-screen w-[236px] flex-shrink-0 flex-col border-r border-atelier-rule px-2.5 pb-4 pt-5 md:flex"
+      >
+        <Link href="/admin" className="flex items-baseline gap-2 px-2.5">
+          <Logo className="h-[18px]" />
+          <span className="text-[12px] font-medium text-atelier-muted">Admin</span>
         </Link>
-        <nav className="mt-5 min-h-0 flex-1 overflow-y-auto border-t border-atelier-rule pt-4">
+        <nav className="mt-4 min-h-0 flex-1 overflow-y-auto pb-2">
           {NAV_GROUPS.map((group) => (
-            <div key={group.label ?? "top"} className={group.label ? "mt-5" : ""}>
-              {group.label && (
-                <p className="px-3 pb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
-                  {group.label}
-                </p>
-              )}
-              <div className="space-y-0.5">
+            <div key={group.label ?? "top"} className={group.label ? "mt-4" : ""}>
+              {group.label && <p className="px-2.5 pb-1 text-[11px] font-semibold text-neutral-400">{group.label}</p>}
+              <div className="space-y-px">
                 {group.hrefs.map((href) => {
                   const item = NAV_ITEMS.find((i) => i.href === href)!;
+                  const Icon = item.icon;
                   const active = isActive(pathname, href);
                   const count = badges[href] ?? 0;
                   return (
                     <Link
                       key={href}
                       href={href}
+                      data-admin-nav
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "relative flex h-8 items-center gap-2.5 rounded-control px-3.5 text-[13.5px] transition-colors",
-                        active
-                          ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink before:absolute before:bottom-2 before:left-0 before:top-2 before:w-[2px] before:rounded-[1px] before:bg-atelier-accent"
-                          : "text-atelier-ink/[0.82] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                        "flex h-[30px] items-center gap-2.5 rounded-[7px] px-2 text-[13px] text-atelier-ink transition-colors",
+                        !active && "hover:bg-atelier-ink/[0.05]",
                       )}
                     >
-                      <span className="flex-1">{item.label}</span>
+                      <span data-admin-tile style={{ background: TILE[href] ?? "#8e8e93" }}>
+                        <Icon className="h-[14px] w-[14px]" strokeWidth={2} />
+                      </span>
+                      <span className="flex-1 truncate">{item.label}</span>
                       {count > 0 && (
                         <span
+                          data-admin-count
                           aria-label={`${count} notification${count === 1 ? "" : "s"}`}
-                          className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-atelier-accent px-[5px] font-numeral text-[11.5px] tabular-nums text-atelier-paper"
+                          className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#ff3b30] px-[5px] text-[11px] font-semibold tabular-nums text-white"
                         >
                           {count > 9 ? "9+" : count}
                         </span>
@@ -370,11 +334,8 @@ export function AdminCommandBar({
             </div>
           ))}
         </nav>
-        <div className="mt-4 flex items-center justify-between border-t border-atelier-rule px-3 pt-4">
-          <Link
-            href="/app"
-            className="flex items-center gap-1 text-xs text-atelier-muted transition-colors hover:text-atelier-ink"
-          >
+        <div className="flex items-center justify-between px-2.5 pt-3">
+          <Link href="/app" className="flex items-center gap-1 text-xs text-atelier-muted transition-colors hover:text-atelier-ink">
             Back to studio
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
               <path d="M7 17 17 7M9 7h8v8" />
@@ -392,108 +353,37 @@ export function AdminCommandBar({
         </div>
       </aside>
 
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-2.5 md:hidden">
-        {/* Scroll region with fade-edged chevron controls. The wrapper is
-            relative so the arrows can overlay the nav's edges; min-w-0 lets
-            this flex child actually shrink (default min-width:auto would
-            keep it at content width and the nav would never need to scroll). */}
-        <div className="relative min-w-0 flex-1">
-          <div
-            className={cn(
-              "pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center bg-gradient-to-r from-atelier-paper via-atelier-paper to-transparent pr-8 transition-opacity duration-200",
-              canLeft ? "opacity-100" : "opacity-0",
+      {/* Phone: a frosted top bar; Menu opens every page (the palette), with its counts. */}
+      <div
+        data-admin-rail
+        className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-atelier-rule px-4 py-2.5 md:hidden"
+      >
+        <Link href="/admin" className="flex items-baseline gap-2">
+          <Logo className="h-[17px]" />
+          <span className="text-[12px] font-medium text-atelier-muted">Admin</span>
+        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/app" className="hidden text-xs text-atelier-muted min-[420px]:inline">
+            Studio ↗
+          </Link>
+          <button
+            type="button"
+            onClick={openPalette}
+            className="relative flex min-w-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[var(--apple-fill)] px-3 py-1.5 text-[13px] font-medium text-[var(--apple-blue)]"
+          >
+            <span className="max-w-[46vw] truncate">Menu · {NAV_ITEMS.find((i) => isActive(pathname, i.href))?.label ?? "Admin"}</span>
+            {totalCount > 0 && (
+              <span className="flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[#ff3b30] px-[4px] text-[10px] font-semibold text-white">
+                {totalCount > 9 ? "9+" : totalCount}
+              </span>
             )}
-          >
-            <button
-              type="button"
-              aria-label="Scroll left"
-              tabIndex={canLeft ? 0 : -1}
-              onClick={() => scrollNav(-1)}
-              className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-500 shadow-[0_1px_3px_rgba(0,0,0,0.08)] transition-colors hover:border-neutral-300 hover:text-neutral-900"
-            >
-              <ChevronLeftIcon className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* py-2 here isn't decorative — nav has overflow-x-auto for the
-              mobile scroll fix, which per the CSS overflow spec forces
-              overflow-y to auto too, clipping anything that pokes outside the
-              nav's own box. The badge sits partly above each icon's edge, so
-              without this padding the top of every badge would get cut off.
-              The scrollbar-hiding utilities keep the raw bar out of sight —
-              the chevrons are the scroll affordance now. */}
-          <nav
-            ref={navRef}
-            onScroll={updateArrows}
-            className="flex items-center gap-1 overflow-x-auto overscroll-x-contain py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-          {NAV_ITEMS.map((item) => {
-            const active = isActive(pathname, item.href);
-            const Icon = item.icon;
-            const count = badges[item.href] ?? 0;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                title={item.label}
-                aria-label={item.label}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex h-8 flex-shrink-0 items-center justify-center gap-2 rounded-[10px] px-2 text-sm transition-colors sm:justify-start sm:px-3",
-                  active
-                    ? "bg-atelier-ink text-atelier-paper"
-                    : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                )}
-              >
-                <span className="relative flex-shrink-0">
-                  <Icon className="h-[18px] w-[18px]" />
-                  <NotificationBadge count={count} />
-                </span>
-                {/* Icon-only on phone width, label appears from sm: up — the
-                    nav has its own overflow-x-auto scroll container above so
-                    even if labels push the total width past the header on a
-                    mid-size tablet, it scrolls within the bar instead of
-                    dragging the whole page, which was the original bug. */}
-                <span className="hidden sm:inline">{item.label}</span>
-              </Link>
-            );
-          })}
-          </nav>
-
-          <div
-            className={cn(
-              "pointer-events-none absolute inset-y-0 right-0 z-20 flex items-center justify-end bg-gradient-to-l from-atelier-paper via-atelier-paper to-transparent pl-8 transition-opacity duration-200",
-              canRight ? "opacity-100" : "opacity-0",
-            )}
-          >
-            <button
-              type="button"
-              aria-label="Scroll right"
-              tabIndex={canRight ? 0 : -1}
-              onClick={() => scrollNav(1)}
-              className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-500 shadow-[0_1px_3px_rgba(0,0,0,0.08)] transition-colors hover:border-neutral-300 hover:text-neutral-900"
-            >
-              <ChevronRightIcon className="h-4 w-4" />
-            </button>
-          </div>
+          </button>
         </div>
-
-        <button
-          type="button"
-          onClick={openPalette}
-          className="flex flex-shrink-0 items-center gap-2 rounded-control border border-atelier-rule px-3 py-1.5 text-sm text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink"
-        >
-          <SearchIcon className="h-4 w-4" />
-          <span className="hidden sm:inline">Jump to&hellip;</span>
-          <kbd className="hidden rounded-[6px] border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 font-sans text-[11px] text-neutral-400 sm:inline">
-            &#8984;K
-          </kbd>
-        </button>
       </div>
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-neutral-900/30 px-4 pt-[15vh]"
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/30 px-4 pt-[12vh]"
           onClick={() => setOpen(false)}
         >
           <div
@@ -501,7 +391,7 @@ export function AdminCommandBar({
             aria-modal="true"
             aria-label="Jump to admin page"
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md overflow-hidden rounded-control bg-atelier-surface/95 backdrop-blur-xl shadow-[0_0_0_1px_var(--frost-ring),0_20px_60px_-15px_rgba(0,0,0,0.35)]"
+            className="w-full max-w-md overflow-hidden rounded-[14px] bg-atelier-surface/95 backdrop-blur-xl shadow-[0_0_0_1px_var(--frost-ring),0_20px_60px_-15px_rgba(0,0,0,0.35)]"
           >
             <div className="flex items-center gap-2.5 border-b border-neutral-100 px-4 py-3">
               <SearchIcon className="h-4 w-4 flex-shrink-0 text-neutral-400" />
@@ -525,7 +415,7 @@ export function AdminCommandBar({
                 <XIcon className="h-4 w-4" />
               </button>
             </div>
-            <ul className="max-h-80 overflow-y-auto p-1.5">
+            <ul className="max-h-[60vh] overflow-y-auto p-1.5">
               {results.length === 0 && (
                 <li className="px-3 py-6 text-center text-sm text-neutral-400">No matches.</li>
               )}
@@ -540,31 +430,19 @@ export function AdminCommandBar({
                       onMouseEnter={() => setSelected(i)}
                       onClick={() => go(item.href)}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left text-sm transition-colors",
-                        active ? "bg-atelier-ink text-atelier-paper" : "text-atelier-ink/[0.82]",
+                        "flex w-full items-center gap-3 rounded-[8px] px-2.5 py-1.5 text-left text-sm transition-colors",
+                        active ? "bg-atelier-accent text-white" : "text-atelier-ink",
                       )}
                     >
-                      <span className="relative flex-shrink-0">
-                        <Icon className="h-4 w-4" />
-                        {count > 0 && (
-                          <span
-                            className={cn(
-                              "absolute -right-2 -top-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ring-[1.5px]",
-                              active
-                                ? "bg-white text-neutral-900 ring-neutral-900"
-                                : "bg-[#FF3B30] text-onmedia ring-white",
-                            )}
-                          >
-                            {count > 9 ? "9+" : count}
-                          </span>
-                        )}
+                      <span data-admin-tile style={{ background: TILE[item.href] ?? "#8e8e93" }}>
+                        <Icon className="h-[14px] w-[14px]" strokeWidth={2} />
                       </span>
                       <span className="flex-1">{item.label}</span>
                       {count > 0 && (
                         <span
                           className={cn(
-                            "flex-shrink-0 text-xs",
-                            active ? "text-white/70" : "text-neutral-400",
+                            "flex h-[18px] min-w-[18px] flex-shrink-0 items-center justify-center rounded-full px-[5px] text-[11px] font-semibold",
+                            active ? "bg-white text-atelier-accent" : "bg-[#ff3b30] text-white",
                           )}
                         >
                           {count}
@@ -575,6 +453,12 @@ export function AdminCommandBar({
                 );
               })}
             </ul>
+            <div className="flex items-center justify-between border-t border-atelier-rule px-4 py-2.5 text-xs text-atelier-muted">
+              <Link href="/app" onClick={() => setOpen(false)} className="hover:text-atelier-ink">
+                Back to studio ↗
+              </Link>
+              <span className="hidden sm:inline">&#8984;K to open · Esc to close</span>
+            </div>
           </div>
         </div>
       )}
@@ -745,22 +629,6 @@ function SparklesIcon(props: SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8L12 3Z" />
       <path d="M19 14l.7 1.8 1.8.7-1.8.7L19 19l-.7-1.8-1.8-.7 1.8-.7L19 14Z" />
-    </svg>
-  );
-}
-
-function ChevronLeftIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m15 5-7 7 7 7" />
-    </svg>
-  );
-}
-
-function ChevronRightIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m9 5 7 7-7 7" />
     </svg>
   );
 }

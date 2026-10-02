@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
+import { HowItWorks } from "@/components/admin/how-it-works";
 import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
@@ -81,11 +82,11 @@ export default async function AdminFeedbackPage({
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">People</p>
         <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Feedback</h1>
       </div>
-      <p className="mt-1 text-sm text-neutral-500">
-        Open-ended feedback people send from the &quot;Give us your feedback&quot; link under the
-        composer — not tied to a specific result (see /admin/reports for those). Also queryable
-        directly from the database (feedback table).
-      </p>
+      <p className="mt-1 text-sm text-neutral-500">What people send from the feedback link under the composer.</p>
+      <HowItWorks>
+        Open-ended feedback, not tied to a specific result (reports on a result are in Reports). Also
+        queryable directly from the database (feedback table).
+      </HowItWorks>
 
       <div className="mt-6">
         <h2 className="text-sm font-semibold text-neutral-900">Open ({openItems.length})</h2>

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { HowItWorks } from "@/components/admin/how-it-works";
 import { toggleFeatureFlag, setSeedanceProvider } from "@/lib/admin/actions";
 import {
   VIDEO_MODELS,
@@ -152,16 +153,17 @@ export default async function AdminProvidersPage({
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Product</p>
         <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">AI providers</h1>
       </div>
-      <p className="mt-1 text-sm text-neutral-500">
-        Claude drafts, OpenAI reviews, fal.ai generates the clip. Voice command and voice mode
-        reuse the same OpenAI key for transcription and speech. Character dialogue (spoken lines,
-        lip-synced onto the video) runs on ElevenLabs + Sync Labs — both fronted by the same
-        fal.ai key, no separate account needed. Manage which voices are available in{" "}
+      <p className="mt-1 text-sm text-neutral-500">Keys, balances and where renders go.</p>
+      <HowItWorks>
+        Claude drafts, OpenAI reviews, fal.ai generates the clip. Voice command and voice mode reuse the same
+        OpenAI key for transcription and speech. Character dialogue (spoken lines, lip-synced onto the video)
+        runs on ElevenLabs + Sync Labs, both fronted by the same fal.ai key, no separate account needed. Manage
+        which voices are available in{" "}
         <a href="/admin/voices" className="underline">
           Admin &gt; Voices
         </a>
         .
-      </p>
+      </HowItWorks>
 
       <Card className="mt-6">
         <div className="flex items-center justify-between">
@@ -205,11 +207,11 @@ export default async function AdminProvidersPage({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0 sm:flex-1">
             <h2 className="text-sm font-semibold text-neutral-900">Seedance render lane</h2>
-            <p className="mt-1 text-xs text-neutral-500">
-              Where a Seedance render goes right now, answered by the same function the pipeline
-              calls — not by what the environment is supposed to say. Every other model stays on
-              fal regardless.
-            </p>
+            <p className="mt-1 text-xs text-neutral-500">Where Seedance renders go right now.</p>
+            <HowItWorks>
+              Answered by the same function the pipeline calls, not by what the environment is supposed to say.
+              Every other model stays on fal regardless.
+            </HowItWorks>
           </div>
           <Badge
             tone={laneLive ? "success" : "neutral"}
@@ -429,10 +431,12 @@ export default async function AdminProvidersPage({
         ) : (
           <>
             <p className="mt-1 text-sm text-neutral-500">
-              Every request fal has on record for the last {ledger.windowDays} days, and what it
-              billed. A failed render should carry no billable units — that is the assumption the
-              automatic refund of provider rejections rests on.
+              Every request fal has on record for the last {ledger.windowDays} days, and what it billed.
             </p>
+            <HowItWorks>
+              A failed render should carry no billable units. That is the assumption the automatic refund of provider
+              rejections rests on.
+            </HowItWorks>
             <div className="mt-4 grid gap-4 sm:grid-cols-4">
               <div>
                 <p className="text-xl font-semibold text-neutral-900">{ledger.total}</p>
@@ -499,11 +503,11 @@ export default async function AdminProvidersPage({
       {pricingAudit().length > 0 && (
         <Card className="mt-6 border-amber-200">
           <h2 className="text-sm font-semibold text-amber-700">Credit weights out of step with cost</h2>
-          <p className="mt-1 text-sm text-neutral-500">
-            Not a profitability problem — every model is well above cost at current plan
-            prices. These weights have drifted relative to what the provider charges, so
-            they consume less allowance per dollar than the others.
-          </p>
+          <p className="mt-1 text-sm text-neutral-500">Every model is still well above cost.</p>
+          <HowItWorks>
+            Not a profitability problem: these weights have drifted relative to what the provider charges, so they
+            consume less allowance per dollar than the others.
+          </HowItWorks>
           <div className="mt-3 space-y-1.5">
             {pricingAudit().map((row) => (
               <p key={`${row.modelId}-${row.seconds}`} className="text-sm text-neutral-700">

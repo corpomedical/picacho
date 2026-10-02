@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { HowItWorks } from "@/components/admin/how-it-works";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -117,14 +118,14 @@ export default async function AdminModerationPage({
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Trust &amp; Safety</p>
         <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Moderation</h1>
       </div>
-      <p className="mt-1 text-sm text-neutral-500">
-        Everything shared into the community feed, hidden posts included. Hiding is reversible and
-        keeps the sharer&apos;s row; reports are worked in{" "}
+      <p className="mt-1 text-sm text-neutral-500">Everything shared into the community feed, hidden posts included.</p>
+      <HowItWorks>
+        Hiding is reversible and keeps the sharer&apos;s row; reports are worked in{" "}
         <Link href="/admin/reports" className="underline underline-offset-2 hover:text-neutral-900">
           Reports
         </Link>
         .
-      </p>
+      </HowItWorks>
 
       <AdminErrorBanner error={errorParam} />
 

@@ -35,6 +35,7 @@ export function Card({
 }: HTMLAttributes<HTMLDivElement> & { pad?: CardPad }) {
   return (
     <div
+      data-ui="card"
       className={cn(CARD_SHEET, PADS[pad], className)}
       {...props}
     />

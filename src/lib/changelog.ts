@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.211.0",
+    build: 250,
+    date: "2026-10-02",
+    title: "The admin area, Apple style",
+    items: [
+      "Every admin page now looks like macOS System Settings: the system font, large bold titles, white rounded groups on light grey, capsule buttons and links in Apple's blue, and pure black with dark grey groups in dark mode.",
+      "The sidebar is frosted, with a coloured icon tile beside each page and the page you're on filled in blue. Counts are red badges. On a phone a top bar's Menu button opens every page as a list.",
+      "Light or dark follows your device in the admin area, whatever the studio is set to.",
+      "Cleaner pages: each has one short line under its title, and the longer explanations (AI providers, Reports, Moderation, Feedback, Promo codes, Render queue, Security) moved into a How this works fold. Nothing was removed.",
+      "Selected filters and the Stats chart are blue instead of black, and the panels some pages draw themselves now match the cards.",
+    ],
+  },
+  {
     version: "1.210.0",
     build: 249,
     date: "2026-10-02",

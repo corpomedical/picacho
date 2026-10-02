@@ -21,6 +21,8 @@ export function Badge({
 }: HTMLAttributes<HTMLSpanElement> & { tone?: Tone }) {
   return (
     <span
+      data-ui="badge"
+      data-tone={tone}
       className={cn(
         "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium",
         tones[tone],

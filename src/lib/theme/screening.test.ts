@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isScreeningPath, isWelcomePath, readThemeChoice, resolveDark, THEME_INIT_SCRIPT } from "./screening";
+import { isAdminPath, isScreeningPath, isWelcomePath, readThemeChoice, resolveDark, THEME_INIT_SCRIPT } from "./screening";
 
 describe("isScreeningPath", () => {
   it("covers the app and everything under it", () => {
@@ -15,6 +15,20 @@ describe("isScreeningPath", () => {
     expect(isScreeningPath(null)).toBe(false);
     expect(isScreeningPath(undefined)).toBe(false);
     expect(isScreeningPath("")).toBe(false);
+  });
+});
+
+describe("the admin area", () => {
+  it("follows the device whatever the studio's look is set to (2026-10-02)", () => {
+    for (const stored of ["default", "light", "dark", "system"] as const) {
+      expect(resolveDark(stored, false, true, false, true)).toBe(true);
+      expect(resolveDark(stored, false, false, false, true)).toBe(false);
+    }
+    expect(isAdminPath("/admin")).toBe(true);
+    expect(isAdminPath("/admin/users/abc")).toBe(true);
+    expect(isAdminPath("/admin-verify")).toBe(true);
+    expect(isAdminPath("/administrator")).toBe(false);
+    expect(isAdminPath("/app/admin")).toBe(false);
   });
 });
 
@@ -104,13 +118,13 @@ describe("THEME_INIT_SCRIPT", () => {
   }
 
   it("agrees with resolveDark and isScreeningPath on every combination", () => {
-    for (const pathname of ["/", "/pricing", "/app", "/app/generate", "/app/welcome"]) {
+    for (const pathname of ["/", "/pricing", "/app", "/app/generate", "/app/welcome", "/admin", "/admin/models", "/admin-verify", "/administrator"]) {
       for (const stored of [null, "default", "light", "dark", "system"]) {
         for (const osDark of [true, false]) {
           const classes = run(pathname, stored, osDark);
           const screening = isScreeningPath(pathname);
           expect(classes.has("screening")).toBe(screening);
-          expect(classes.has("dark")).toBe(resolveDark(readThemeChoice(stored), screening, osDark, isWelcomePath(pathname)));
+          expect(classes.has("dark")).toBe(resolveDark(readThemeChoice(stored), screening, osDark, isWelcomePath(pathname), isAdminPath(pathname)));
         }
       }
     }

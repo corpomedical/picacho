@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { isScreeningPath, isWelcomePath, readThemeChoice, resolveDark, THEME_STORAGE_KEY, type ThemeChoice } from "./screening";
+import { isAdminPath, isScreeningPath, isWelcomePath, readThemeChoice, resolveDark, THEME_STORAGE_KEY, type ThemeChoice } from "./screening";
 
 export type ThemeMode = ThemeChoice;
 
@@ -32,7 +32,7 @@ function applyTheme(mode: ThemeMode, pathname: string | null) {
   const screening = isScreeningPath(pathname);
   const osDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
   root.classList.toggle("screening", screening);
-  root.classList.toggle("dark", resolveDark(mode, screening, osDark, isWelcomePath(pathname)));
+  root.classList.toggle("dark", resolveDark(mode, screening, osDark, isWelcomePath(pathname), isAdminPath(pathname)));
 }
 
 // Layout effect on the client, plain effect on the server (where neither

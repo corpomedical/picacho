@@ -313,7 +313,7 @@ export default async function AdminStatsPage({
                 <div
                   className={cn(
                     "absolute bottom-0 left-0 right-0 rounded-t-[4px] transition-colors",
-                    isToday ? "bg-ochre" : "bg-neutral-900 group-hover:bg-neutral-600",
+                    isToday ? "bg-atelier-accent/45" : "bg-atelier-accent group-hover:bg-atelier-accent/75",
                   )}
                   style={{ height: `${h}%` }}
                 />

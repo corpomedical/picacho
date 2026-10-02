@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
+import { HowItWorks } from "@/components/admin/how-it-works";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -201,12 +202,12 @@ export default async function AdminReportsPage({
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Trust &amp; Safety</p>
         <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Reports</h1>
       </div>
-      <p className="mt-1 text-sm text-neutral-500">
-        Problems users flagged directly on a result via the report button next to Copy/Like/Dislike,
-        plus ones the site caught on its own (failed generations, client-side errors — tagged
-        &quot;Auto-detected&quot;) so nothing depends on someone remembering to report it. Also queryable
-        straight from the database (generation_reports) for a faster fix loop.
-      </p>
+      <p className="mt-1 text-sm text-neutral-500">Problems flagged on a result, by people and by the site itself.</p>
+      <HowItWorks>
+        People report from the button next to Copy, Like and Dislike. The site adds the ones it catches on its
+        own (failed generations, client-side errors, tagged &quot;Auto-detected&quot;), so nothing depends on
+        someone remembering to report it. Also queryable straight from the database (generation_reports).
+      </HowItWorks>
 
       <div className="mt-6">
         <h2 className="text-sm font-semibold text-neutral-900">Open ({openTotal})</h2>

@@ -67,10 +67,7 @@ export default async function AdminActivityPage({
         <div className="min-w-0 flex-1">
           <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Admin</p>
           <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Activity log</h1>
-          <p className="mt-1 text-sm text-atelier-muted">
-            Every change any admin made: who, when, what it was before, what it became, and why. Nobody can
-            edit or delete a line.
-          </p>
+          <p className="mt-1 text-sm text-atelier-muted">Every change any admin made. Nobody can edit or delete a line.</p>
         </div>
         <a
           href={exportHref}

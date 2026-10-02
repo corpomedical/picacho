@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { HowItWorks } from "@/components/admin/how-it-works";
 import { createPromoCode } from "@/lib/admin/promo-actions";
 import { Card } from "@/components/ui/card";
 import { PromoCodeCard } from "@/components/admin/promo-code-card";
@@ -85,10 +86,11 @@ export default async function AdminPromoPage({
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Money</p>
         <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Promo codes</h1>
       </div>
-      <p className="mt-1 text-sm text-neutral-500">
-        One code per salesperson. Clients enter it on the Stripe payment page; every redemption is
-        recorded here with the revenue it brought and the commission owed.
-      </p>
+      <p className="mt-1 text-sm text-neutral-500">One code per salesperson, with the revenue and commission each brings.</p>
+      <HowItWorks>
+        Clients enter the code on the Stripe payment page; every redemption is recorded here with the revenue it
+        brought and the commission owed.
+      </HowItWorks>
 
       <Card className="mt-6">
         <h2 className="text-sm font-semibold text-neutral-900">New code</h2>

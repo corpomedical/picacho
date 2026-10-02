@@ -83,6 +83,8 @@ export function Button({
   return (
     <button
       ref={ref}
+      data-ui="button"
+      data-variant={variant}
       className={cn(
         base,
         variants[variant],

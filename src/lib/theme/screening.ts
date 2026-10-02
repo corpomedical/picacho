@@ -38,6 +38,15 @@ export function isWelcomePath(pathname: string | null | undefined): boolean {
 }
 
 /**
+ * The admin area (2026-10-02, the Apple-style admin: light and dark "follow
+ * my device"). There the device decides, whatever look the studio is set to.
+ */
+export function isAdminPath(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  return pathname === "/admin" || pathname.startsWith("/admin/") || pathname === "/admin-verify";
+}
+
+/**
  * Whether the page renders dark.
  *
  * Inside the app the Screening Room IS the default: "Default" means dark
@@ -45,7 +54,8 @@ export function isWelcomePath(pathname: string | null | undefined): boolean {
  * look back. Everywhere else "Default" still follows the OS, exactly as
  * before, so marketing pages behave the way they always have.
  */
-export function resolveDark(mode: ThemeChoice, screening: boolean, osDark: boolean, welcome = false): boolean {
+export function resolveDark(mode: ThemeChoice, screening: boolean, osDark: boolean, welcome = false, admin = false): boolean {
+  if (admin) return osDark;
   if (mode === "dark") return true;
   if (mode === "light") return false;
   if (mode === "system") return osDark;
@@ -71,11 +81,12 @@ export const THEME_INIT_SCRIPT = `
     var path = window.location.pathname || "";
     var screening = path === "/app" || path.indexOf("/app/") === 0;
     var welcome = path === "${WELCOME_PATH}";
+    var admin = path === "/admin" || path.indexOf("/admin/") === 0 || path === "/admin-verify";
     var stored = null;
     try { stored = window.localStorage.getItem("${THEME_STORAGE_KEY}"); } catch (e) {}
     var mode = stored === "light" || stored === "dark" || stored === "system" ? stored : "default";
     var osDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var isDark = mode === "dark" || (mode === "system" && osDark) || (mode === "default" && ((screening && !welcome) || osDark));
+    var isDark = admin ? osDark : mode === "dark" || (mode === "system" && osDark) || (mode === "default" && ((screening && !welcome) || osDark));
     var root = window.document.documentElement;
     if (screening) root.classList.add("screening");
     if (isDark) root.classList.add("dark");

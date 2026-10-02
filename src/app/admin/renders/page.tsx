@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { HowItWorks } from "@/components/admin/how-it-works";
 import { loadRenderQueue, ORPHAN_AFTER_MIN, STUCK_AFTER_MIN } from "@/lib/admin/today";
 import { ActionButton } from "@/components/admin/today-panel";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
@@ -40,10 +41,11 @@ export default async function AdminRendersPage({
       <AutoRefresh intervalMs={15_000} />
       <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Operations</p>
       <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Render queue</h1>
-      <p className="mt-1 text-sm text-atelier-muted">
-        Every render in flight right now, oldest first. Updates by itself every 15 seconds. A render counts as stuck
-        after {STUCK_AFTER_MIN} minutes, or after {ORPHAN_AFTER_MIN} with no provider job.
-      </p>
+      <p className="mt-1 text-sm text-atelier-muted">Every render in flight right now, oldest first.</p>
+      <HowItWorks>
+        Updates by itself every 15 seconds. A render counts as stuck after {STUCK_AFTER_MIN} minutes, or after{" "}
+        {ORPHAN_AFTER_MIN} with no provider job.
+      </HowItWorks>
 
       <div className="mt-5 flex flex-wrap gap-2">
         <Link href="/admin/renders" className={chip(show !== "stuck")}>

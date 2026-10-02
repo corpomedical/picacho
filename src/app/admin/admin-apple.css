@@ -1,0 +1,305 @@
+/* ADMIN · APPLE (operator, 2026-10-02: "change the theme of the admin area
+   and clean up. Premium looking at its best" → on the drafts page he asked
+   for "Apple like design", then picked draft D in system blue, light and
+   dark following the device; claude.ai/artifact/FNe8SgcaLncjRkDiGQeyj1).
+
+   Built like macOS System Settings and App Store Connect: the system font,
+   white rounded groups on light grey (pure black in dark), hairline
+   separators, capsule buttons in system blue, iOS switches, coloured icon
+   tiles in the sidebar.
+
+   Everything hangs off `.admin-apple` on the admin layout's root, so the app
+   and the marketing site never see it. The admin pages already paint with
+   the atelier-* and neutral-* tokens; re-declaring those tokens here repaints
+   all 21 pages at once. `.dark` on <html> is the one light/dark switch, and
+   on /admin it always follows the device (lib/theme/screening.ts). */
+
+.admin-apple {
+  --color-atelier-paper: #f5f5f7;
+  --color-atelier-surface: #ffffff;
+  --color-atelier-ink: #1d1d1f;
+  --color-atelier-muted: #6e6e73;
+  --color-atelier-rule: rgba(60, 60, 67, 0.13);
+  --color-atelier-accent: #0071e3;
+  --frost-ring: rgba(0, 0, 0, 0.05);
+  --font-numeral: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --radius-control: 10px;
+  --color-neutral-50: #fafafc;
+  --color-neutral-100: #f2f2f7;
+  --color-neutral-200: #e5e5ea;
+  --color-neutral-300: #c7c7cc;
+  --color-neutral-400: #8e8e93;
+  --color-neutral-500: #6e6e73;
+  --color-neutral-600: #545458;
+  --color-neutral-700: #3a3a3c;
+  --color-neutral-800: #2c2c2e;
+  --color-neutral-900: #1d1d1f;
+  --color-white: #ffffff;
+  /* Apple's system colours for the states the pages already mark. */
+  --apple-blue: #0071e3;
+  --apple-green: #34c759;
+  --apple-green-ink: #248a3d;
+  --apple-orange-ink: #c93400;
+  --apple-red: #ff3b30;
+  --apple-red-ink: #d70015;
+  --apple-fill: rgba(120, 120, 128, 0.12);
+  --apple-sidebar: rgba(242, 242, 247, 0.82);
+  --apple-shadow: 0 1px 1px rgba(0, 0, 0, 0.02), 0 2px 10px rgba(0, 0, 0, 0.045);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  letter-spacing: -0.003em;
+  background: var(--color-atelier-paper);
+  color: var(--color-atelier-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.dark .admin-apple {
+  --color-atelier-paper: #000000;
+  --color-atelier-surface: #1c1c1e;
+  --color-atelier-ink: #f5f5f7;
+  --color-atelier-muted: #98989d;
+  --color-atelier-rule: rgba(255, 255, 255, 0.1);
+  --color-atelier-accent: #0a84ff;
+  --frost-ring: rgba(255, 255, 255, 0.06);
+  --color-neutral-50: #0b0b0c;
+  --color-neutral-100: #1c1c1e;
+  --color-neutral-200: #2c2c2e;
+  --color-neutral-300: #3a3a3c;
+  --color-neutral-400: #8e8e93;
+  --color-neutral-500: #98989d;
+  --color-neutral-600: #aeaeb2;
+  --color-neutral-700: #c7c7cc;
+  --color-neutral-800: #e5e5ea;
+  --color-neutral-900: #f5f5f7;
+  --color-white: #1c1c1e;
+  --apple-blue: #0a84ff;
+  --apple-green: #30d158;
+  --apple-green-ink: #30d158;
+  --apple-orange-ink: #ff9f0a;
+  --apple-red: #ff453a;
+  --apple-red-ink: #ff453a;
+  --apple-fill: rgba(120, 120, 128, 0.24);
+  --apple-sidebar: rgba(28, 28, 30, 0.85);
+  --apple-shadow: none;
+}
+
+/* ---- Cards: white rounded groups, no outline (a hairline in dark) ---- */
+.admin-apple [data-ui="card"] {
+  border-radius: 14px;
+  box-shadow: var(--apple-shadow);
+}
+/* Only the default hairline goes: a card a page marks red or amber keeps that
+   border (tailwind-merge drops border-atelier-rule when one is passed). */
+.admin-apple [data-ui="card"][class~="border-atelier-rule"] {
+  border-color: transparent;
+}
+
+/* ---- Buttons: capsules; primary filled blue, secondary grey fill with blue text ---- */
+.admin-apple [data-ui="button"] {
+  border-radius: 999px;
+  letter-spacing: -0.01em;
+}
+/* A primary button a page paints itself (bg-red-*, bg-emerald-*, bg-amber-*) keeps its colour. */
+.admin-apple [data-ui="button"][data-variant="primary"]:not([class*="bg-red"]):not([class*="bg-emerald"]):not([class*="bg-amber"]) {
+  background: var(--apple-blue);
+  color: #fff;
+}
+.admin-apple [data-ui="button"][data-variant="primary"]:not([class*="bg-red"]):not([class*="bg-emerald"]):not([class*="bg-amber"]):hover {
+  background: color-mix(in srgb, var(--apple-blue) 88%, black);
+}
+.admin-apple [data-ui="button"][data-variant="secondary"] {
+  background: var(--apple-fill);
+  border-color: transparent;
+  color: var(--apple-blue);
+}
+.admin-apple [data-ui="button"][data-variant="secondary"]:hover {
+  background: color-mix(in srgb, var(--apple-fill) 100%, var(--apple-blue) 6%);
+}
+.admin-apple [data-ui="button"][data-variant="ghost"] {
+  color: var(--apple-blue);
+}
+.admin-apple [data-ui="button"][data-variant="destructive"] {
+  color: var(--apple-red-ink);
+}
+
+/* ---- Badges: tinted capsules in the system colours ---- */
+.admin-apple [data-ui="badge"] {
+  border-color: transparent;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.admin-apple [data-ui="badge"][data-tone="neutral"] {
+  background: var(--apple-fill);
+  color: var(--color-atelier-muted);
+}
+.admin-apple [data-ui="badge"][data-tone="success"] {
+  background: color-mix(in srgb, var(--apple-green) 15%, transparent);
+  color: var(--apple-green-ink);
+}
+.admin-apple [data-ui="badge"][data-tone="warning"] {
+  background: color-mix(in srgb, #ff9500 16%, transparent);
+  color: var(--apple-orange-ink);
+}
+.admin-apple [data-ui="badge"][data-tone="danger"] {
+  background: color-mix(in srgb, var(--apple-red) 13%, transparent);
+  color: var(--apple-red-ink);
+}
+
+/* ---- Form fields: rounded, blue focus ring. In a layer, so a field's own utilities still win. ---- */
+@layer base {
+  .admin-apple :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]), select, textarea) {
+    border-radius: 10px;
+  }
+  .admin-apple :where(input, select, textarea, button, a):focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--apple-blue) 40%, transparent);
+    outline-offset: 1px;
+  }
+  .admin-apple :where(input[type="checkbox"], input[type="radio"]) {
+    accent-color: var(--apple-blue);
+  }
+  .admin-apple :where(a) {
+    text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+  }
+}
+
+/* ---- Sidebar (macOS): frosted, coloured icon tiles, blue selection ---- */
+.admin-apple [data-admin-rail] {
+  background: var(--apple-sidebar);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+.admin-apple [data-admin-tile] {
+  display: inline-flex;
+  height: 22px;
+  width: 22px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: #fff;
+}
+.admin-apple [data-admin-nav][aria-current="page"] {
+  background: var(--apple-blue);
+  color: #fff;
+}
+.admin-apple [data-admin-nav][aria-current="page"] [data-admin-count] {
+  background: #fff;
+  color: var(--apple-blue);
+}
+
+/* ---- Segmented controls ---- */
+.admin-apple [data-segmented] {
+  display: inline-flex;
+  gap: 2px;
+  border-radius: 9px;
+  background: var(--apple-fill);
+  padding: 2px;
+}
+.admin-apple [data-segmented] > * {
+  border-radius: 7px;
+}
+.admin-apple [data-segmented] > [aria-current="page"],
+.admin-apple [data-segmented] > [aria-pressed="true"],
+.admin-apple [data-segmented] > [data-on="true"] {
+  background: var(--color-atelier-surface);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  font-weight: 600;
+  color: var(--color-atelier-ink);
+}
+.dark .admin-apple [data-segmented] > [aria-current="page"],
+.dark .admin-apple [data-segmented] > [aria-pressed="true"],
+.dark .admin-apple [data-segmented] > [data-on="true"] {
+  background: #636366;
+}
+
+/* ---- Type: Apple's large title, sentence-case section labels, semibold figures ---- */
+.admin-apple main h1 {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 34px;
+  line-height: 1.12;
+  letter-spacing: -0.022em;
+  color: var(--color-atelier-ink);
+}
+@media (max-width: 640px) {
+  .admin-apple main h1 {
+    font-size: 30px;
+  }
+}
+/* The small label above each title ("Money", "Product"): Apple sets it in sentence case. */
+.admin-apple main p:has(+ h1) {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-atelier-muted);
+}
+/* Every small-caps label on the pages becomes an Apple group header. */
+.admin-apple main [class*="uppercase"][class*="tracking-["] {
+  text-transform: none;
+  letter-spacing: -0.005em;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.admin-apple .font-numeral {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+/* Card titles. */
+.admin-apple [data-ui="card"] h2,
+.admin-apple [data-ui="card"] h3 {
+  letter-spacing: -0.01em;
+}
+.admin-apple [data-ui="card"] > h2:first-child,
+.admin-apple [data-ui="card"] > div:first-child > h2:first-child,
+.admin-apple [data-ui="card"] > div:first-child > div:first-child > h2:first-child {
+  font-size: 15px;
+  font-weight: 600;
+}
+/* Tables: Apple list rows. */
+.admin-apple main table {
+  font-variant-numeric: tabular-nums;
+}
+.admin-apple main thead th {
+  font-weight: 600;
+  color: var(--color-atelier-muted);
+}
+
+/* ---- "How this works": the long explanations, folded ---- */
+.admin-apple details[data-how] {
+  margin-top: 12px;
+  border-top: 1px solid var(--color-atelier-rule);
+  padding-top: 10px;
+}
+.admin-apple details[data-how] > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  color: var(--apple-blue);
+}
+.admin-apple details[data-how] > summary::-webkit-details-marker {
+  display: none;
+}
+.admin-apple details[data-how] > :not(summary) {
+  margin-top: 8px;
+  max-width: 72ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-atelier-muted);
+}
+
+/* ---- Selected pills and filled controls: system blue, never black ---- */
+.admin-apple main :is(.bg-atelier-ink, .bg-neutral-900):is(.text-atelier-paper, .text-white) {
+  background: var(--apple-blue);
+  color: #fff;
+}
+/* Progress and share bars. */
+.admin-apple main :is(.bg-atelier-ink, .bg-neutral-900).h-full.rounded-full {
+  background: var(--apple-blue);
+}
+
+/* ---- Panels pages draw themselves (tiles, lists): the same borderless group as a card ---- */
+.admin-apple main :is(.rounded-2xl, .rounded-\[14px\], .rounded-\[16px\], .rounded-\[18px\]):is(.border-atelier-rule, .border-neutral-100, .border-neutral-200):is(.bg-atelier-surface, .bg-white) {
+  border-color: transparent;
+  border-radius: 14px;
+  box-shadow: var(--apple-shadow);
+}
