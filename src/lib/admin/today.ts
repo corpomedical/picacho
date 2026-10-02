@@ -167,6 +167,19 @@ export type TodayNumbers = {
   finished: number;
   failed: number;
   topUps: { count: number; byCurrency: Record<string, number> };
+  /**
+   * Every payment Stripe took in the last 30 days (plans, renewals, top-ups),
+   * refunds and failures left out, and the latest one. Added 2026-10-02 for
+   * the phone app's Money in tile, which counted only credit top-ups since
+   * midnight UTC and so read $0 while plan payments came in.
+   */
+  moneyIn: {
+    days: number;
+    count: number;
+    byCurrency: Record<string, number>;
+    last: { amountCents: number; currency: string; at: string } | null;
+    error: string | null;
+  };
   falBalanceUsd: number | null;
   falLevel: "critical" | "low" | null;
 };
@@ -202,9 +215,8 @@ export async function loadToday(
       admin.from("generations").select("id", { count: "exact", head: true }).gte("created_at", since).eq("status", "succeeded"),
       admin.from("generations").select("id", { count: "exact", head: true }).gte("created_at", since).eq("status", "failed"),
       admin.from("credit_purchases").select("amount_cents, currency").gte("created_at", since).is("refunded_at", null),
-      // Disputes waiting on an answer (Stripe). One charge only: the list
-      // below needs the disputes, the Payments page has the charges.
-      loadPayments(admin, { limit: 1 }),
+      // Disputes waiting on an answer, and the last 100 charges for Money in (Stripe).
+      loadPayments(admin, { limit: 100 }),
     ]);
 
   const reportRows = (reports.data ?? []) as {
@@ -396,6 +408,16 @@ export async function loadToday(
     byCurrency[c] = (byCurrency[c] ?? 0) + (t.amount_cents ?? 0);
   }
 
+  const MONEY_DAYS = 30;
+  const moneySince = new Date(now - MONEY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const paid = stripeSide.payments.filter((p) => p.state === "paid" && p.created >= moneySince);
+  const moneyByCurrency: Record<string, number> = {};
+  for (const p of paid) {
+    const c = p.currency.toLowerCase();
+    moneyByCurrency[c] = (moneyByCurrency[c] ?? 0) + p.amountCents;
+  }
+  const lastPaid = stripeSide.payments.find((p) => p.state === "paid") ?? null;
+
   return {
     items: sortInbox(items),
     queue,
@@ -405,6 +427,13 @@ export async function loadToday(
       finished: finishedToday.count ?? 0,
       failed: failedToday.count ?? 0,
       topUps: { count: (topUps.data ?? []).length, byCurrency },
+      moneyIn: {
+        days: MONEY_DAYS,
+        count: paid.length,
+        byCurrency: moneyByCurrency,
+        last: lastPaid ? { amountCents: lastPaid.amountCents, currency: lastPaid.currency, at: lastPaid.created } : null,
+        error: stripeSide.error,
+      },
       falBalanceUsd: fal.ok ? fal.balanceUsd : null,
       falLevel,
     },

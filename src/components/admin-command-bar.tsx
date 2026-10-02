@@ -291,7 +291,11 @@ export function AdminCommandBar({
       >
         <Link href="/admin" className="flex items-baseline gap-2 px-2.5">
           <Logo className="h-[18px]" />
-          <span className="text-[12px] font-medium text-atelier-muted">Admin</span>
+          {/* The logo image runs 33% below the letters (the orange line and its
+              margin: letters end at row 399 of 595), and a flex baseline lines
+              text up with an image's bottom edge, so "Admin" is raised by that
+              much to sit on the letters' baseline: 18px × 196/595 ≈ 6px. */}
+          <span className="relative -top-[6px] text-[12px] font-medium text-atelier-muted">Admin</span>
         </Link>
         <nav className="mt-4 min-h-0 flex-1 overflow-y-auto pb-2">
           {NAV_GROUPS.map((group) => (
@@ -360,7 +364,7 @@ export function AdminCommandBar({
       >
         <Link href="/admin" className="flex items-baseline gap-2">
           <Logo className="h-[17px]" />
-          <span className="text-[12px] font-medium text-atelier-muted">Admin</span>
+          <span className="relative -top-[5.5px] text-[12px] font-medium text-atelier-muted">Admin</span>
         </Link>
         <div className="flex items-center gap-3">
           <Link href="/app" className="hidden text-xs text-atelier-muted min-[420px]:inline">
