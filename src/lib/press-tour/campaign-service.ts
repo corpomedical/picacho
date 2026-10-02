@@ -29,6 +29,7 @@
 // Relative imports only (vitest has no "@/").
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { clipEvidence } from "../clippings/service";
 import { adVerdict } from "../product-lock/product-lock";
 import type { CampaignResult, CampaignSource, CampaignView, StillEngine } from "./campaign-types";
 import {
@@ -351,6 +352,8 @@ export async function planCampaign(
     source?: CampaignSource;
     /** The picture engine the person picked (default GPT Image). */
     engine?: StillEngine;
+    /** "Plan an ad like this": one of the person's own clips (Press Tour › Clippings). */
+    clipId?: string | null;
   },
 ): Promise<CampaignResult> {
   const gate = campaignGate(caller);
@@ -420,9 +423,10 @@ export async function planCampaign(
   }
 
   const own = await deps.ownRules(caller.userId).catch(() => [] as PolicyRule[]);
-  const [pastAngles, trends] = await Promise.all([
+  const [pastAngles, trends, evidence] = await Promise.all([
     readPastAngles(deps.db, caller.userId, { productId, brandKitId, exceptId: id }),
     deps.trends ? deps.trends().catch(() => [] as readonly string[]) : Promise.resolve([] as readonly string[]),
+    input?.clipId ? clipEvidence(deps.db, caller.userId, input.clipId).catch(() => null) : Promise.resolve(null),
   ]);
   const planned = await planAd(deps.planner, {
     length,
@@ -431,6 +435,7 @@ export async function planCampaign(
     goal,
     pastAngles,
     trends,
+    evidence,
     star,
     ownRules: own,
   });

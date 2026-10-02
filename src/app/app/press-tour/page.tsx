@@ -35,6 +35,11 @@ import {
   previewPost,
 } from "@/lib/press-tour/publish-actions";
 import { readWaitlist, setWaitlist } from "@/lib/press-tour/waitlist-actions";
+import { readClippingsSwitches } from "@/lib/clippings/enabled";
+import { clippingsHome } from "@/lib/clippings/service";
+import { addClip, clipUploadPlace, getClippings, readClippings, removeClip } from "@/lib/clippings/actions";
+import { isNativeApp } from "@/lib/native/server";
+import { supabaseSocialStore } from "@/lib/social/store";
 import { PressTourDoor } from "@/components/press-tour/press-tour-door";
 import type { ConnectNote } from "@/components/press-tour/press-line";
 
@@ -59,7 +64,14 @@ export const maxDuration = 300;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-type Search = { campaign?: string | string[]; star?: string | string[]; connected?: string | string[]; connect_error?: string | string[]; network?: string | string[] };
+type Search = {
+  campaign?: string | string[];
+  star?: string | string[];
+  connected?: string | string[];
+  connect_error?: string | string[];
+  network?: string | string[];
+  tab?: string | string[];
+};
 const one = (v: string | string[] | undefined): string | null => (typeof v === "string" ? v : null);
 
 /**
@@ -94,9 +106,10 @@ export default async function PressTourPage({ searchParams }: { searchParams: Pr
   if (profile?.role !== "admin") notFound();
   if (!(await isPressTourEnabled(supabase))) notFound();
 
-  const [home, switches] = await Promise.all([
+  const [home, switches, clipSwitches] = await Promise.all([
     getPressTourHome({ db: supabase, admin: createAdminClient() }, userId),
     readPressTourSwitches(supabase),
+    readClippingsSwitches(supabase),
   ]);
 
   // The engine's server actions, by the contract's names (campaign-types.ts
@@ -133,7 +146,26 @@ export default async function PressTourPage({ searchParams }: { searchParams: Pr
     listPosts,
   };
   const waitlist: WaitlistActions = { readWaitlist, setWaitlist };
-  const address = fromAddress(await searchParams);
+  const sp = await searchParams;
+  const address = fromAddress(sp);
+
+  // Press Tour › Clippings (2026-10-02, board C), behind press_clippings: the
+  // person's own posts, read with the service role and only their rows.
+  let clippings = null;
+  if (clipSwitches.on) {
+    const admin = createAdminClient();
+    const store = supabaseSocialStore(admin);
+    const clipHome = await clippingsHome(
+      { db: admin, now: () => new Date(), connections: async (id) => (await store.connections(id)).filter((c) => c.network === "instagram" || c.network === "tiktok") },
+      userId,
+      { switches: clipSwitches, webOnly: await isNativeApp() },
+    );
+    clippings = {
+      home: clipHome,
+      actions: { getClippings, readClippings, clipUploadPlace, addClip, removeClip },
+      initialTab: one(sp.tab) === "clippings" ? ("clippings" as const) : ("ad" as const),
+    };
+  }
 
   return (
     <PressTourDoor
@@ -148,6 +180,7 @@ export default async function PressTourPage({ searchParams }: { searchParams: Pr
       publish={publish}
       waitlist={waitlist}
       connectNote={address.connectNote}
+      clippings={clippings}
     />
   );
 }

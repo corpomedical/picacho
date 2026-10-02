@@ -41,12 +41,12 @@ export const instagramOAuth: OAuthAdapter = {
   usesPkce: false,
   envKeys: { id: "INSTAGRAM_APP_ID", secret: "INSTAGRAM_APP_SECRET" },
 
-  authorizeUrl({ creds, redirectUri, state }) {
+  authorizeUrl({ creds, redirectUri, state, extraScopes }) {
     return withQuery(INSTAGRAM_AUTHORIZE_URL, {
       client_id: creds.clientId,
       redirect_uri: redirectUri,
       response_type: "code",
-      scope: INSTAGRAM_SCOPES.join(","),
+      scope: [...INSTAGRAM_SCOPES, ...(extraScopes ?? [])].join(","),
       state,
     });
   },

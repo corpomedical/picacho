@@ -72,9 +72,10 @@ const REAL_WORDS: Partial<Record<Lang, RegExp>> = { es: /(?<=\s|^)veo(?=[\s.,;:!
 // "Hashtags" is the Spanish and Portuguese word too, and TikTok's Italian
 // app calls Stitch "Stitch".
 const SAME_AS_ENGLISH: Record<Exclude<Lang, "en">, readonly string[]> = {
-  es: ["headline", "stepPlan", "creditsShort", "lengthSeconds", "secondsSoFar", "hashtags"],
-  pt: ["headline", "creditsShort", "lengthSeconds", "secondsSoFar", "hashtags"],
-  it: ["headline", "creditsShort", "lengthSeconds", "secondsSoFar", "logoTag", "ttStitch"],
+  // Clippings (2026-10-02): the tabs' label is the name; "{n} s", and "post"/"file" in Portuguese and Italian, are the same words.
+  es: ["headline", "stepPlan", "creditsShort", "lengthSeconds", "secondsSoFar", "hashtags", "tabsLabel", "clipSeconds"],
+  pt: ["headline", "creditsShort", "lengthSeconds", "secondsSoFar", "hashtags", "tabsLabel", "clipSeconds", "clipPostsN", "clipPostsOne"],
+  it: ["headline", "creditsShort", "lengthSeconds", "secondsSoFar", "logoTag", "ttStitch", "tabsLabel", "clipSeconds", "clipPostsOne", "clipFilesOne"],
 };
 
 describe("the Press Tour door", () => {

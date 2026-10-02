@@ -291,6 +291,8 @@ export interface CampaignActions {
     source?: CampaignSource;
     /** The picture engine (default GPT Image). */
     engine?: StillEngine;
+    /** "Plan an ad like this" (Press Tour › Clippings): one of the person's own clips. */
+    clipId?: string | null;
   }): Promise<CampaignResult>;
   /**
    * Pick the picture engine the stills are painted on (free). Only while the

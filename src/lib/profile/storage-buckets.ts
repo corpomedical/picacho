@@ -60,6 +60,10 @@ export const USER_STORAGE_BUCKETS = [
   // attached in Aly's chat (PDFs, pictures, Word files, spreadsheets),
   // `${userId}/${fileId}/<name>`. Missing until that file runs; skipped then.
   "aly-files",
+  // Added 2026-10-02 WITH the bucket (supabase/pending/press-clippings.sql):
+  // a video the person made, staged for Press Tour › Clippings at
+  // `${userId}/${clipId}/video` until its words are read, then removed.
+  "press-clip-uploads",
 ];
 
 // The one storage sweep both deletion paths share. This was two hand-copied

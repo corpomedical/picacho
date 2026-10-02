@@ -312,6 +312,13 @@ export type PlannerInput = {
   pastAngles?: readonly string[];
   /** Today's searches (trends.ts, behind press_trends): context only. */
   trends?: readonly string[];
+  /**
+   * "Plan an ad like this" (Press Tour › Clippings, 2026-10-02): one of the
+   * person's OWN videos that beat their usual, as a structure to follow:
+   * its format, how far above their usual it did, and its labelled lines.
+   * Data, never instructions; the ad borrows the shape, never the words.
+   */
+  evidence?: { format: string | null; times: number | null; lines: readonly { t: number; part: string; said: string }[] } | null;
 };
 
 const BEAT_WORDS: Record<ShotRole, string> = {
@@ -357,6 +364,18 @@ function memoryAndTrends(input: PlannerInput): string[] {
   if (past.length > 0) {
     out.push(fenceUntrusted(`Angles of this advertiser's earlier ads for this product or brand:\n${past.map((a) => `- ${a}`).join("\n")}`, "past-angles", 600));
     out.push("Choose a fresh angle: not one of those earlier ones, while keeping the brand's tone of voice.");
+  }
+  const ev = input.evidence;
+  if (ev && ev.lines.length > 0) {
+    const head = [
+      ev.format ? `Format: ${cleanText(ev.format, 40) ?? ""}` : null,
+      ev.times !== null && Number.isFinite(ev.times) ? `It got ${Math.round(ev.times * 10) / 10} times this advertiser's usual views.` : null,
+    ].filter(Boolean);
+    const lines = ev.lines.slice(0, 12).map((l) => `${Math.round(l.t)}s ${l.part}: ${cleanText(l.said, 200) ?? ""}`);
+    out.push(fenceUntrusted(`One of this advertiser's own videos that did well:\n${[...head, ...lines].join("\n")}`, "own-best-video", 2000));
+    out.push(
+      "Build this ad on that video's structure: the same kind of video, the hook landing as fast, the product arriving at about the same point, the same number of proofs, one ask at the end. Write new words for this product; never copy that video's sentences.",
+    );
   }
   const trends = (input.trends ?? []).map((t) => cleanText(t, 60)).filter((t): t is string => Boolean(t)).slice(0, 8);
   if (trends.length > 0) {

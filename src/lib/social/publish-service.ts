@@ -88,6 +88,7 @@ import {
   X_LINK_NOTE,
   type ConnectErrorCode,
 } from "./messages";
+import { INSTAGRAM_READ_SCOPE, TIKTOK_READ_SCOPE } from "../clippings/scopes";
 import { OAUTH } from "./networks";
 import {
   DEFAULT_RETURN,
@@ -171,6 +172,22 @@ function open4(access: AccessFacts, network: Network): boolean {
   return networkOpen(network, access.switches, { isAdmin: access.isAdmin, testerNetworks: access.testerNetworks });
 }
 
+/** Press Tour › Clippings reads this network (its switch is on): connecting is open for reading. */
+function readsOpen(access: AccessFacts, network: Network): boolean {
+  return (network === "instagram" && access.clippings?.instagram === true) || (network === "tiktok" && access.clippings?.tiktok === true);
+}
+
+/** The reading permission Clippings asks for on top of posting's, when it reads this network. */
+function readScopes(access: AccessFacts, network: Network): string[] {
+  if (!readsOpen(access, network)) return [];
+  return network === "instagram" ? [INSTAGRAM_READ_SCOPE] : [TIKTOK_READ_SCOPE];
+}
+
+/** May this person connect this network at all (to post, or for Clippings to read)? */
+function mayConnect(access: AccessFacts, network: Network): boolean {
+  return access.pressTourOk && (open4(access, network) || readsOpen(access, network));
+}
+
 // ---------------------------------------------------------------------
 // Connections
 // ---------------------------------------------------------------------
@@ -200,7 +217,7 @@ export async function startConnect(
   const network = input.network;
   if (deps.native) return fail(CONNECT_ON_COMPUTER);
   const access = await deps.readAccess(caller.userId);
-  if (!access.pressTourOk || !open4(access, network)) return fail(POSTING_NOT_OPEN);
+  if (!mayConnect(access, network)) return fail(POSTING_NOT_OPEN);
   const adapter = oauthOf(deps)[network];
   const origin = siteOrigin(deps.env);
   const creds = credentialsFor(adapter, deps.env);
@@ -224,7 +241,7 @@ export async function startConnect(
   if (!stored) return fail(CONNECT_FAILED);
   return {
     ok: true,
-    url: adapter.authorizeUrl({ creds, redirectUri: redirectUri(origin, network), state, codeChallenge: pkce?.challenge ?? null }),
+    url: adapter.authorizeUrl({ creds, redirectUri: redirectUri(origin, network), state, codeChallenge: pkce?.challenge ?? null, extraScopes: readScopes(access, network) }),
   };
 }
 
@@ -258,7 +275,7 @@ export async function completeConnect(
   if (!authCode || authCode.length > 2000) return code("failed", returnTo);
 
   const access = await deps.readAccess(userId).catch(() => null);
-  if (!access || !access.pressTourOk || !open4(access, network)) return code("closed", returnTo);
+  if (!access || !mayConnect(access, network)) return code("closed", returnTo);
 
   const adapter = oauthOf(deps)[network];
   const origin = siteOrigin(deps.env);

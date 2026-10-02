@@ -70,6 +70,12 @@ export type AccessFacts = {
   isAdmin: boolean;
   testerNetworks: string[];
   switches: PostingSwitches;
+  /**
+   * Press Tour › Clippings' network switches (clippings/enabled.ts): an
+   * account may be connected for reading even while posting there is
+   * closed, and connecting then asks for the reading permission too.
+   */
+  clippings?: { instagram: boolean; tiktok: boolean };
 };
 
 export interface WorkerDeps {

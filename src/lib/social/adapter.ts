@@ -49,7 +49,8 @@ export interface OAuthAdapter {
   usesPkce: boolean;
   /** The environment variables holding the app's credentials. */
   envKeys: { id: string; secret: string };
-  authorizeUrl(input: { creds: Credentials; redirectUri: string; state: string; codeChallenge: string | null }): string;
+  /** `extraScopes`: asked for on top of `scopes` (Clippings' reading permission, when its switch is on). */
+  authorizeUrl(input: { creds: Credentials; redirectUri: string; state: string; codeChallenge: string | null; extraScopes?: readonly string[] }): string;
   /** Throws OAuthExchangeError when the network refuses or the answer can't be read. */
   exchangeCode(
     fetchImpl: FetchLike,

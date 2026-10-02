@@ -492,3 +492,36 @@ describe("cancel and disconnect", () => {
     expect(JSON.stringify(owed)).not.toContain("x-refresh-1");
   });
 });
+
+describe("Press Tour › Clippings: connecting to read (2026-10-02)", () => {
+  it("its switch opens connecting even while posting there is closed, and asks for the reading permission", async () => {
+    const b = bench();
+    b.access = { ...b.access, isAdmin: false, clippings: { instagram: true, tiktok: false } };
+    const r = await startConnect(b.service(), admin, { network: "instagram", returnTo: "/app/press-tour?tab=clippings" });
+    expect(r.ok).toBe(true);
+    const url = new URL((r as { url: string }).url);
+    expect(url.searchParams.get("scope")!.split(",")).toEqual([
+      "instagram_business_basic",
+      "instagram_business_content_publish",
+      "instagram_business_manage_insights",
+    ]);
+    const stored = b.store.states.get(stateHash(url.searchParams.get("state")!))!;
+    expect(stored.returnTo).toBe("/app/press-tour?tab=clippings");
+  });
+
+  it("switch off: posting's own scopes only, and closed where posting is closed", async () => {
+    const b = bench();
+    const r = await startConnect(b.service(), admin, { network: "instagram" });
+    expect(new URL((r as { url: string }).url).searchParams.get("scope")).toBe("instagram_business_basic,instagram_business_content_publish");
+    const c = bench();
+    c.access = { ...c.access, isAdmin: false, clippings: { instagram: false, tiktok: true } };
+    expect(await startConnect(c.service(), admin, { network: "instagram" })).toEqual({ ok: false, error: POSTING_NOT_OPEN });
+  });
+
+  it("TikTok asks for video.list when Clippings reads it", async () => {
+    const b = bench();
+    b.access = { ...b.access, clippings: { instagram: false, tiktok: true } };
+    const r = await startConnect(b.service(), admin, { network: "tiktok" });
+    expect(new URL((r as { url: string }).url).searchParams.get("scope")).toBe("user.info.basic,video.publish,video.upload,video.list");
+  });
+});

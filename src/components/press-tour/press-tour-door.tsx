@@ -48,6 +48,8 @@ import { EngineChoice, QuoteCard } from "./quote-card";
 import { PhoneRoute, RouteRail, type RouteStopView } from "./route-rail";
 import { PhoneRunningOrder, RunningOrder, type StillActions } from "./running-order";
 import { StarAskFields, saidLine, type StarDraft } from "./star-ask";
+import { ClippingsView, type ClippingsActions, type PlanFrom } from "./clippings-view";
+import type { ClippingsHome } from "@/lib/clippings/types";
 import s from "./press-tour.module.css";
 
 // THE PRESS TOUR DOOR (Cut 1 UI, 2026-09-26). Direction A, "Red Carpet"
@@ -107,6 +109,12 @@ export type PressTourDoorProps = {
   waitlist: WaitlistActions;
   /** A connect's answer on the way back from a network (?connected= / ?connect_error=): the press line opens on it. */
   connectNote: ConnectNote | null;
+  /**
+   * Press Tour › Clippings (2026-10-02, board C): the tab beside "The ad",
+   * when its switch is on. `initialTab` comes from the address (?tab=clippings,
+   * which a connect for reading returns to).
+   */
+  clippings?: { home: ClippingsHome; actions: ClippingsActions; initialTab: "ad" | "clippings" } | null;
 };
 
 type Length = 10 | 15 | 30;
@@ -181,7 +189,7 @@ function dismissStoppedAd(id: string): void {
   }
 }
 
-export function PressTourDoor({ characters, products, brandKits, openCampaignId, initialStarId = null, emailConfirmed, networks, actions, publish, waitlist, connectNote }: PressTourDoorProps) {
+export function PressTourDoor({ characters, products, brandKits, openCampaignId, initialStarId = null, emailConfirmed, networks, actions, publish, waitlist, connectNote, clippings = null }: PressTourDoorProps) {
   const { t, locale } = useLocale();
   const m = t.pressTour;
   const ids = useId();
@@ -198,6 +206,23 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
   const [kitId, setKitId] = useState<string | null>(() => brandKits[0]?.kit.id ?? null);
   const [length, setLength] = useState<Length>(15);
   const [goal, setGoal] = useState("");
+  // Clippings: which tab, and the post an ad is being planned on ("Plan an ad like this").
+  const [tab, setTab] = useState<"ad" | "clippings">(clippings?.initialTab ?? "ad");
+  const [fromClip, setFromClip] = useState<PlanFrom | null>(null);
+  const pickTab = useCallback((next: "ad" | "clippings") => {
+    setTab(next);
+    try {
+      const url = new URL(window.location.href);
+      if (next === "clippings") url.searchParams.set("tab", "clippings");
+      else url.searchParams.delete("tab");
+      url.searchParams.delete("connected");
+      url.searchParams.delete("connect_error");
+      url.searchParams.delete("network");
+      window.history.replaceState(null, "", url.toString());
+    } catch {
+      // the address just keeps its old words
+    }
+  }, []);
 
   const [campaign, setCampaign] = useState<CampaignView | null>(null);
   const [loading, setLoading] = useState(openCampaignId !== null);
@@ -215,7 +240,8 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
   // The press line: opened by its key, or on arrival back from connecting a
   // network (or a #press-line link) once the ad is ready.
   const [line, setLine] = useState<"auto" | "open" | "closed">(() =>
-    connectNote || (typeof window !== "undefined" && window.location.hash === "#press-line") ? "auto" : "closed",
+    // A connect made for Clippings comes back to its tab, never into the press line.
+    (connectNote && clippings?.initialTab !== "clippings") || (typeof window !== "undefined" && window.location.hash === "#press-line") ? "auto" : "closed",
   );
 
   // A connect's answer rides on the address once: take it off, so a reload doesn't say it again.
@@ -410,7 +436,10 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
       label: m.planKey,
       price: m.free,
       disabled: block !== null || pending !== null,
-      press: () =>
+      press: () => {
+        // The post it is planned on rides with this press only.
+        const clipId = fromClip?.clipId ?? null;
+        setFromClip(null);
         void run("plan", () =>
           actions.planCampaign({
             sendId: crypto.randomUUID(),
@@ -420,8 +449,10 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
             lengthSeconds: length,
             goal: goal.trim() || undefined,
             source: "door",
+            clipId,
           }),
-        ),
+        );
+      },
       blocker: block ? blockWords[block] : null,
       hint: m.planHint,
     };
@@ -895,6 +926,17 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
               className="mt-1 block w-full resize-none rounded-[10px] bg-[rgba(255,255,255,0.03)] px-2.5 py-2 text-[13px] leading-[1.4] text-[#ecedf1] ring-1 ring-inset ring-[rgba(255,255,255,0.1)] placeholder:text-[#62656e] focus:outline-none focus:ring-[rgba(240,196,142,0.65)]"
             />
           </label>
+          {fromClip && (
+            <p className="mt-2 flex items-start gap-1.5 text-[12px] leading-[1.4] text-[#e6d6c2]">
+              <CheckIcon className="mt-px h-3 w-3 flex-none text-[#e0a468]" />
+              <span className="min-w-0">
+                {formatMsg(m.clipFromLine, { format: fromClip.format ?? m.clipNoFormat, x: fromClip.times ?? "" }).replace(/ · $/, "")}{" "}
+                <button type="button" onClick={() => setFromClip(null)} className="text-[#9aa0ad] underline decoration-[rgba(255,255,255,0.25)] underline-offset-2">
+                  {m.clipFromRemove}
+                </button>
+              </span>
+            </p>
+          )}
         </>
       )}
       <div className="mt-2 rounded-[10px] bg-[rgba(255,255,255,0.03)] px-2.5 py-2 text-xs leading-[1.4] text-[#c6c9d1] ring-1 ring-inset ring-[rgba(255,255,255,0.08)]">
@@ -1046,6 +1088,41 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
     </div>
   );
 
+  // The two tabs (board C): The ad · Clippings.
+  const tabs = clippings ? (
+    <div role="tablist" aria-label={m.tabsLabel} className="grid grid-cols-2 rounded-xl bg-[rgba(255,255,255,0.04)] p-[3px] ring-1 ring-inset ring-[rgba(255,255,255,0.08)] lg:inline-grid">
+      {(["ad", "clippings"] as const).map((k) => (
+        <button
+          key={k}
+          type="button"
+          role="tab"
+          aria-selected={tab === k}
+          onClick={() => pickTab(k)}
+          className={cn(
+            "min-h-11 rounded-[9px] px-[18px] text-[13.5px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f0cda6] lg:min-h-[38px] lg:text-[13px]",
+            tab === k ? "bg-[rgba(255,255,255,0.08)] text-[#ecedf1]" : "text-[#9aa0ad] hover:text-[#c6c9d1]",
+          )}
+        >
+          {k === "ad" ? m.tabAd : m.tabClippings}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
+  /** Connect a network for Clippings to read; comes back to this tab. An error is answered in the person's words. */
+  const connectForClippings = async (network: "instagram" | "tiktok"): Promise<string | null> => {
+    try {
+      const r = await publish.connectStart({ network, returnTo: "/app/press-tour?tab=clippings" });
+      if (r.ok) {
+        window.location.assign(r.url);
+        return null;
+      }
+      return localizeServerText(r.error, t);
+    } catch {
+      return m.clipErrUnavailable;
+    }
+  };
+
   return (
     <>
       <DoorFrame data-press-tour-door="" className="relative isolate overflow-hidden">
@@ -1077,9 +1154,10 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
               <h1 className="marquee bg-[linear-gradient(180deg,#fbf6ee_18%,#b9ad9c_100%)] bg-clip-text text-[26px] leading-none text-transparent md:text-[34px]">
                 {m.headline}
               </h1>
-              <p className="mt-2 max-w-[720px] text-[13px] leading-[1.45] text-[#9aa0ad] md:text-sm">{subLine}</p>
+              <p className="mt-2 max-w-[720px] text-[13px] leading-[1.45] text-[#9aa0ad] md:text-sm">{tab === "clippings" ? m.clipSub : subLine}</p>
             </div>
-            {campaign && (
+            {clippings && <div className="hidden flex-none lg:block">{tabs}</div>}
+            {campaign && tab === "ad" && (
               <div className="hidden flex-none text-right text-xs leading-[1.6] text-[#858994] xl:block">
                 {creditsNow !== null && <p>{withNumber(creditsNow === 1 ? m.creditsLeftOne : m.creditsLeft, creditsNow)}</p>}
                 {/* The angle is The angle tile's; here only when the ad was last saved, so the promise keeps one line. */}
@@ -1088,6 +1166,22 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
             )}
           </div>
 
+          {clippings && <div className="mt-3 lg:hidden">{tabs}</div>}
+          {tab === "clippings" && clippings ? (
+            <ClippingsView
+              initial={clippings.home}
+              actions={clippings.actions}
+              connect={connectForClippings}
+              connectNote={clippings.initialTab === "clippings" ? connectNote : null}
+              onPlan={(from) => {
+                setFromClip(from);
+                pickTab("ad");
+              }}
+              m={m}
+              locale={locale}
+            />
+          ) : (
+          <>
           {quote?.trial && (
             <div className="mt-3 flex items-center gap-3 rounded-2xl bg-[rgba(255,255,255,0.03)] px-3 py-2.5 ring-1 ring-inset ring-[rgba(240,196,142,0.35)]">
               <span className="grid h-9 w-9 flex-none place-items-center rounded-[10px] bg-[rgba(255,214,164,0.07)] text-[#f6dcb8] ring-1 ring-inset ring-[rgba(255,214,164,0.15)]">
@@ -1277,11 +1371,13 @@ export function PressTourDoor({ characters, products, brandKits, openCampaignId,
 
           {/* The accounts it posts to (web only to connect), once any network can take a post. */}
           {liveNetworks > 0 && <PostingAccounts publish={publish} campaignId={campaign?.id ?? null} connectNote={stage === "ready" && campaign?.master ? null : connectNote} />}
+          </>
+          )}
         </div>
       </DoorFrame>
 
       {/* The phone's dock: opaque, grows with its words, the key leaves the lamp its corner. */}
-      {key && dockShown && (
+      {tab === "ad" && key && dockShown && (
         <>
           <div aria-hidden="true" className="md:hidden" style={{ height: dockRoom }} />
           <div ref={dockRef} className={s.dock}>

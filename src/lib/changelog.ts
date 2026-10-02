@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.218.0",
+    build: 257,
+    date: "2026-10-02",
+    title: "Clippings: what your own posts say works, inside Press Tour",
+    items: [
+      "Press Tour has a second tab, Clippings. It puts every one of your own videos on one chart by views, with your median as a dashed line and Press Tour's own ads ringed. A table ranks your formats (Try-on, Result first, Talking to camera…) by how far above or below your usual they do.",
+      "Tap any video to see inside it: its script line by line with timestamps, each line marked Hook, Co-star, Proof or The line, a colour bar of how the video is built, and one sentence on why it did better or worse than your usual.",
+      "\"Plan an ad like this\" takes you back to The ad with that video as the model: the planner follows its structure (how fast the hook lands, when the product arrives, one ask at the end) and writes new words for your product. Planning stays free.",
+      "Where the videos come from: your own Instagram (views and words; Business or Creator accounts), your own TikTok (views only, because TikTok shares no video file), the ads Press Tour posted for you, and videos you add and confirm you made. Nobody else's account is ever read, your posts are never pooled with other people's, an added video's file is deleted once its words are read, and disconnecting an account deletes everything read from it.",
+      "Admins only, behind three switches that start off: press_clippings for the tab, then press_clippings_instagram and press_clippings_tiktok, each turned on only after its reading permission is added at Meta or TikTok. The privacy policy says what is read and who reads it, in all four languages.",
+    ],
+  },
+  {
     version: "1.217.0",
     build: 256,
     date: "2026-10-02",

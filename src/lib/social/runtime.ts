@@ -27,6 +27,7 @@ import { hashedRateKey, rateLimited } from "@/lib/rate-limit";
 import { createAdminClient } from "@/lib/supabase/server";
 import { ownBrandRules, plannerDeps } from "@/lib/press-tour/campaign-runtime";
 import { pressTourAllowed, pressTourOpenings, readPressTourSettings, readPressTourSwitches } from "@/lib/press-tour/enabled";
+import { readClippingsSwitches } from "@/lib/clippings/enabled";
 import { adPolicyCheck } from "@/lib/press-tour/planner";
 import { TIKTOK_AUDITED } from "./access";
 import { CAPTION_CHECK_UNAVAILABLE, CAPTION_REFUSED, CAPTION_REFUSED_AD_RULES } from "./messages";
@@ -62,11 +63,12 @@ function keyring() {
 /** Everything the worker and the service need to know about a person, read fresh. */
 export async function readAccess(store: SocialStore, userId: string): Promise<AccessFacts> {
   const admin = createAdminClient();
-  const [switches, settings, profile, testerNetworks] = await Promise.all([
+  const [switches, settings, profile, testerNetworks, clippings] = await Promise.all([
     readPressTourSwitches(admin),
     readPressTourSettings(admin),
     store.profile(userId).catch(() => null),
     store.testerNetworks(userId).catch(() => [] as string[]),
+    readClippingsSwitches(admin),
   ]);
   const verdict = pressTourAllowed(profile, pressTourOpenings(switches, settings));
   return {
@@ -74,6 +76,7 @@ export async function readAccess(store: SocialStore, userId: string): Promise<Ac
     isAdmin: verdict.isAdmin && verdict.error === null,
     testerNetworks,
     switches,
+    clippings: { instagram: clippings.on && clippings.instagram, tiktok: clippings.on && clippings.tiktok },
   };
 }
 

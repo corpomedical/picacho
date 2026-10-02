@@ -74,6 +74,7 @@ export async function planCampaign(input: {
   goal?: string;
   source?: CampaignSource;
   engine?: StillEngine;
+  clipId?: string | null;
 }): Promise<CampaignResult> {
   return behindDoor("plan an ad", (caller, deps) => service.planCampaign(deps, caller, { ...input, source: browserSource(input?.source) }));
 }

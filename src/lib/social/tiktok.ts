@@ -92,10 +92,10 @@ export const tiktokOAuth: OAuthAdapter = {
   usesPkce: false,
   envKeys: { id: "TIKTOK_CLIENT_KEY", secret: "TIKTOK_CLIENT_SECRET" },
 
-  authorizeUrl({ creds, redirectUri, state }) {
+  authorizeUrl({ creds, redirectUri, state, extraScopes }) {
     return withQuery(TIKTOK_AUTHORIZE_URL, {
       client_key: creds.clientId,
-      scope: TIKTOK_SCOPES.join(","),
+      scope: [...TIKTOK_SCOPES, ...(extraScopes ?? [])].join(","),
       response_type: "code",
       redirect_uri: redirectUri,
       state,
