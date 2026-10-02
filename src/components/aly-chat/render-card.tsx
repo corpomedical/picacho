@@ -16,6 +16,8 @@ import { ExpandMediaButton } from "@/components/media-viewer";
 import { DownloadButton } from "@/components/download-button";
 import { ZoomableImage } from "@/components/zoomable-image";
 import { lightHref } from "@/lib/light/mode";
+import { CreatingPicture } from "./creating-picture";
+import styles from "./aly-chat.module.css";
 
 // A picture or clip Aly got ready in the chat (2026-09-29). The card shows
 // the price before anything is spent; "Make it" is the person's own Send,
@@ -51,6 +53,14 @@ export function RenderCard({
   const [state, setState] = useState<State>(card.generationId ? "working" : "ready");
   const [take, setTake] = useState<LightTake | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A picture being made shows ChatGPT's frame instead of the card
+  // (creating-picture.tsx), from the moment it is KNOWN to be working: a card
+  // opened again starts as "working" until its take is read, and a finished
+  // picture must not flash "Creating picture" on the way in.
+  const [making, setMaking] = useState(false);
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  // The card coming back with the picture it just made (not one reopened).
+  const [cameIn, setCameIn] = useState(false);
   const alive = useRef(true);
 
   useEffect(() => {
@@ -65,6 +75,7 @@ export function RenderCard({
     if (!alive.current) return;
     setTake(tk);
     setState(tk?.status === "succeeded" ? "done" : tk?.status === "cancelled" ? "stopped" : tk?.status === "generating" || tk?.status === "pending" ? "working" : "failed");
+    if (tk?.status === "succeeded") setCameIn(true);
   }
 
   async function follow(id: string) {
@@ -99,6 +110,8 @@ export function RenderCard({
           setGenId(id);
           setError(null);
           setState("working");
+          setStartedAt(Date.now());
+          setMaking(true);
         }
         const tk = await getLightTake(id);
         if (!alive.current) return;
@@ -107,7 +120,12 @@ export function RenderCard({
         setTake(tk);
         if (tk?.status === "succeeded") setState("done");
         else if (tk?.status === "cancelled") setState("stopped");
-        else if (tk && (tk.status === "generating" || tk.status === "pending")) void follow(id);
+        else if (tk && (tk.status === "generating" || tk.status === "pending")) {
+          const at = tk.createdAt ? Date.parse(tk.createdAt) : NaN;
+          if (!Number.isNaN(at)) setStartedAt(at);
+          setMaking(true);
+          void follow(id);
+        }
         else setState("failed");
       })();
     }, 0);
@@ -145,6 +163,9 @@ export function RenderCard({
     if (card.kind === "ad" || state === "working") return;
     setError(null);
     setState("working");
+    setStartedAt(Date.now());
+    setMaking(true);
+    setCameIn(false);
     const id = crypto.randomUUID();
     setGenId(id);
     const fd = new FormData();
@@ -198,8 +219,20 @@ export function RenderCard({
     .filter(Boolean)
     .join(" · ");
 
+  if (state === "working" && making && card.kind === "image") {
+    return (
+      <CreatingPicture
+        label={c.renderCreating}
+        stopLabel={c.renderStop}
+        onStop={genId ? () => void requestGenerationCancel(genId) : undefined}
+        startedAt={startedAt}
+        aspect={DEFAULT_IMAGE_ASPECT}
+      />
+    );
+  }
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-atelier-rule bg-atelier-ink/[0.02]">
+    <div className={`overflow-hidden rounded-2xl border border-atelier-rule bg-atelier-ink/[0.02] ${cameIn && state === "done" ? styles.cardIn : ""}`}>
       {state === "done" && take?.resultUrl ? (
         // Full screen and download on the frame's corners, as on History
         // (2026-09-30: the card had neither, so a take made in the chat could

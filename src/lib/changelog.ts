@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.214.0",
+    build: 253,
+    date: "2026-10-02",
+    title: "A picture being made shows it's on its way",
+    items: [
+      "In Aly's chat and in Picacho Light, a picture being made now shows the way ChatGPT shows one: a shimmering \"Creating picture\" line with a seconds clock and a small Stop, over a frame in the picture's own square shape with soft light moving through it.",
+      "The card with the finished picture and its buttons comes in once the picture is there. Before, a wide box with a small \"Making it…\" pill sat still for the whole wait and looked stuck.",
+      "A chat opened again while its picture is still being made shows the same frame, its clock counting from when the picture was started. Light's own box (Change it first, Make it without Aly) shows the same frame for pictures.",
+      "Videos keep the look they had.",
+    ],
+  },
+  {
     version: "1.213.0",
     build: 252,
     date: "2026-10-02",

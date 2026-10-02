@@ -147,9 +147,128 @@
   background: #8fa6e0;
 }
 
+/* A picture being made (creating-picture.tsx, operator's pick 2 of the
+   2026-10-02 drafts): ChatGPT's frame. Soft light drifts through a plain
+   frame in the picture's shape, a sheen passes over it and a fine grain sits
+   on top; the words above shimmer. Light's palette by default, the dark one
+   wherever the page is dark (Light dark, Aly's page in the Screening Room). */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-atelier-muted) 0%,
+    var(--color-atelier-muted) 35%,
+    var(--color-atelier-ink) 50%,
+    var(--color-atelier-muted) 65%,
+    var(--color-atelier-muted) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+.makingFrame {
+  --making-ground: #e9e4de;
+  --making-cloud: #ffffff;
+  --making-shine: rgba(255, 255, 255, 0.75);
+  --making-grain: 0.05;
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--making-ground);
+  animation: makingIn 0.3s ease-out both;
+}
+:global(html.dark) .makingFrame {
+  --making-ground: #1c1a17;
+  --making-cloud: #3a352f;
+  --making-shine: rgba(255, 245, 230, 0.12);
+  --making-grain: 0.08;
+}
+@keyframes makingIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.makingCloud {
+  position: absolute;
+  width: 85%;
+  height: 85%;
+  border-radius: 50%;
+  background: var(--making-cloud);
+  filter: blur(40px);
+}
+.makingCloudA {
+  left: -30%;
+  top: -25%;
+  opacity: 0.9;
+  animation: makingDriftA 6s ease-in-out infinite alternate;
+}
+.makingCloudB {
+  right: -35%;
+  bottom: -30%;
+  opacity: 0.7;
+  animation: makingDriftB 7s ease-in-out infinite alternate;
+}
+@keyframes makingDriftA {
+  to {
+    transform: translate(45%, 35%);
+  }
+}
+@keyframes makingDriftB {
+  to {
+    transform: translate(-40%, -30%);
+  }
+}
+.makingShine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, var(--making-shine) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: makingShine 2.4s linear infinite;
+}
+@keyframes makingShine {
+  from {
+    background-position: 140% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+.makingGrain {
+  position: absolute;
+  inset: 0;
+  opacity: var(--making-grain);
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* The card coming back with the picture in it. */
+.cardIn {
+  animation: makingIn 0.4s ease-out both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lampThinking,
   .caret::after {
+    animation: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer,
+  .makingFrame,
+  .makingCloudA,
+  .makingCloudB,
+  .makingShine,
+  .cardIn {
     animation: none;
   }
 }

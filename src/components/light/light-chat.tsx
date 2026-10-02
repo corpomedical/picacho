@@ -19,6 +19,7 @@ import { LIGHT_HOME, studioHref, type LightPrepared } from "@/lib/light/mode";
 import { MenuIcon, PlusIcon, useLightShell } from "./light-shell";
 import { MediaViewer } from "@/components/media-viewer";
 import { AccountMenuButton } from "@/components/account-menu/account-menu";
+import { CreatingPicture } from "@/components/aly-chat/creating-picture";
 
 type Kind = "video" | "image";
 type Photo = { url: string; path: string };
@@ -34,6 +35,8 @@ type Turn =
       state: "working" | "done" | "failed" | "stopped";
       take: LightTake | null;
       error: string | null;
+      /** Epoch ms it was started: the clock on a picture being made. */
+      startedAt: number;
     };
 
 export type LightDefaults = {
@@ -205,6 +208,7 @@ export function LightChat({
             state: openedTake.status === "succeeded" ? "done" : openedTake.status === "generating" ? "working" : "failed",
             take: openedTake,
             error: null,
+            startedAt: openedTake.createdAt ? Date.parse(openedTake.createdAt) || Date.now() : Date.now(),
           },
         ]
       : [],
@@ -292,7 +296,7 @@ export function LightChat({
     setTurns((prev) => [
       ...prev,
       { role: "user", key: `u-${id}`, text: clean, photoUrl: sentPhoto?.url ?? null },
-      { role: "take", key: `t-${id}`, id, kind: k, prompt: clean, state: "working", take: null, error: null },
+      { role: "take", key: `t-${id}`, id, kind: k, prompt: clean, state: "working", take: null, error: null, startedAt: Date.now() },
     ]);
     setText("");
     setPhoto(null);
@@ -613,6 +617,7 @@ export function LightChat({
                     onAgain={() => prefill(turn.prompt, turn.kind)}
                     onFollow={(chip, nextKind) => prefill(`${turn.prompt}. ${chip}.`, nextKind)}
                     onRetry={() => void send(turn.prompt, turn.kind)}
+                    onStop={() => void stop(turn.id)}
                   />
                 ),
               )}
@@ -642,6 +647,7 @@ function TakeTurn({
   onAgain,
   onFollow,
   onRetry,
+  onStop,
 }: {
   turn: Extract<Turn, { role: "take" }>;
   onShare: (take: LightTake) => void;
@@ -649,6 +655,7 @@ function TakeTurn({
   onFollow: (chip: string, kind: Kind) => void;
   /** Sends the same words again (it charges again, as a new send). */
   onRetry: () => void;
+  onStop: () => void;
 }) {
   const { t, locale } = useLocale();
   const l = t.light;
@@ -663,6 +670,19 @@ function TakeTurn({
     setViewing({ startAt: v?.currentTime || undefined });
     v?.pause();
   };
+
+  // A picture: ChatGPT's frame, the same one Aly's cards show
+  // (creating-picture.tsx, operator's pick 2026-10-02), in Light's colours.
+  if (turn.state === "working" && !video) {
+    return (
+      <div className="flex items-start gap-4">
+        <Mark />
+        <div className="pl-aly w-[min(300px,60vw)] pt-0.5">
+          <CreatingPicture label={t.alyChat.renderCreating} stopLabel={t.alyChat.renderStop} onStop={onStop} startedAt={turn.startedAt} />
+        </div>
+      </div>
+    );
+  }
 
   if (turn.state === "working") {
     return (

@@ -54,6 +54,8 @@ export type LightTake = {
   modelId: string | null;
   /** Why a failed take stopped, in the person's words (the take page's same rule). */
   failReason: string | null;
+  /** When it was started: a card opened again mid-render counts its clock from here. */
+  createdAt: string | null;
 };
 
 /**
@@ -87,7 +89,7 @@ export async function getLightTake(id: string): Promise<LightTake | null> {
   if (!userData.user) return null;
   const { data: row } = await supabase
     .from("generations")
-    .select("id, prompt_input, content_type, status, result_url, credits_used, free_generation_used, model_id, pipeline_log")
+    .select("id, prompt_input, content_type, status, result_url, credits_used, free_generation_used, model_id, pipeline_log, created_at")
     .eq("id", id)
     // An admin's SELECT policy reads every row; this chat is only ever yours.
     .eq("user_id", userData.user.id)
@@ -104,6 +106,7 @@ export async function getLightTake(id: string): Promise<LightTake | null> {
     freeGeneration: row.free_generation_used === true,
     modelId: (row.model_id as string | null) ?? null,
     failReason: row.status === "failed" ? await failReasonOf(row.pipeline_log) : null,
+    createdAt: (row.created_at as string | null) ?? null,
   };
 }
 

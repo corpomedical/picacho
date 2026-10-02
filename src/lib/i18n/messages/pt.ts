@@ -5300,6 +5300,7 @@ const pt = {
     renderOpen: "Abrir em Gerar",
     renderAd: "Abrir no Press Tour",
     renderWorking: "Fazendo…",
+    renderCreating: "Criando imagem",
     renderCharged: "Foram cobrados {credits} créditos",
     renderChargedOne: "Foi cobrado 1 crédito",
     renderFree: "Feito com o render grátis de hoje",

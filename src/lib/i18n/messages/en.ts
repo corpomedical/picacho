@@ -5598,6 +5598,7 @@ const en = {
     renderOpen: "Open in Generate",
     renderAd: "Open in Press Tour",
     renderWorking: "Making it…",
+    renderCreating: "Creating picture",
     renderCharged: "Charged {credits} credits",
     renderChargedOne: "Charged 1 credit",
     renderFree: "Made with today's free render",
