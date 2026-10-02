@@ -4,7 +4,7 @@
 // and the operator found out by noticing a missing payment.
 //
 // The webhooks call noteSubscriptionEvent; it never throws, so a missing
-// table (supabase/pending/who-comes-back.sql not run yet) or a failed write
+// table (supabase/applied/2026-10-03/who-comes-back.sql not run yet) or a failed write
 // can't make Stripe or RevenueCat redeliver a payment event.
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { notifyAdmins } from "@/lib/push/web-push";

@@ -218,7 +218,7 @@ const COLUMNS = {
   // excludes anyone with a row. A missing table fails the claim and skips
   // everyone — silently, since a failed claim reads as "already claimed".
   drip_sends: ["user_id", "template", "sent_at"],
-  // Who comes back (supabase/pending/who-comes-back.sql, 2026-10-03). The
+  // Who comes back (supabase/applied/2026-10-03/who-comes-back.sql, 2026-10-03). The
   // heartbeat, the webhooks and the morning cron all fail soft without
   // these, so a missing one would only show as an empty admin page.
   user_tool_days: ["user_id", "day", "tool", "first_at", "last_at"],

@@ -33,7 +33,8 @@ export const RELEASES: Release[] = [
       "The same three kinds of row (Paying, Cancelled, Stalled) appear in Overview → Needs you and on the phone admin app's Today.",
       "Your phone is told: a cancellation the moment it happens (Stripe and Google Play), and every morning at 07:30 UTC any paying customer gone quiet or first render that didn't land. Each person once; past four in one morning they're summed up in one alert.",
       "To count tools, the app now notes which tool page a signed-in person is on (one row per person, per tool, per day), on Picacho's own server. Cancellations are now written down too; before, a cancelled plan left no trace.",
-      "Needs supabase/pending/who-comes-back.sql run first. Until then nothing is recorded and no alert is sent; the pages still work from renders, chats, edits and sets already saved.",
+      "The database part (supabase/applied/2026-10-03/who-comes-back.sql) ran on 3 October; from then on tool use, cancellations and the alerts already sent are recorded. The pages still use renders, chats, edits and sets saved before that.",
+
     ],
   },
   {

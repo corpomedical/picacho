@@ -16,7 +16,7 @@ import { QUIET_AFTER_DAYS, QUIET_LIST_DAYS, dayKey } from "@/lib/retention/model
 // coming back and going quiet again is a new one. Cancellations push from
 // the webhooks the moment they happen (lib/retention/subscription-events.ts).
 //
-// Before supabase/pending/who-comes-back.sql runs, every claim fails and
+// Before supabase/applied/2026-10-03/who-comes-back.sql runs, every claim fails and
 // nothing is sent.
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;

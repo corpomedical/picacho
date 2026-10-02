@@ -14,7 +14,7 @@ import { toolForPath } from "@/lib/retention/tools";
 // from. Only the tool it maps to is kept (toolForPath answers null for
 // anything that isn't a known /app tool), written for the signed-in person
 // and today, by the server — user_tool_days has no browser write policy.
-// Fails soft: before supabase/pending/who-comes-back.sql runs, nothing is
+// Fails soft: before supabase/applied/2026-10-03/who-comes-back.sql runs, nothing is
 // written and the beat still counts.
 export async function POST(request: Request) {
   try {

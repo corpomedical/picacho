@@ -3,7 +3,7 @@
 // the cron.
 //
 // Every source but profiles fails soft: a table that isn't there yet (the
-// SQL in supabase/pending/who-comes-back.sql not run) or a query that errors
+// SQL in supabase/applied/2026-10-03/who-comes-back.sql not run) or a query that errors
 // leaves that source empty, and a tool whose "made something" couldn't be
 // read shows a dash instead of a misleading 0.
 //
