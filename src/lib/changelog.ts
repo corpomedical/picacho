@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.223.0",
+    build: 262,
+    date: "2026-10-04",
+    title: "Phone photos work on FLUX 3 again, so free accounts' pictures stop failing",
+    items: [
+      "What happened (3 October, 21:09 UTC): someone signed up and six minutes later attached a photo of themselves in Aly's chat and asked for a studio portrait. It failed in 12 seconds. FLUX 3 turned the photo away: \"Image dimensions are too large. Maximum area is 4000000 pixels². Found 12192768\". That's an ordinary 12 MP phone photo (4032 x 3024). They were told \"Something went wrong… try again\", which would have failed the same way, and left five minutes later. No credit or free picture was used.",
+      "Why: FLUX 3, which replaced FLUX.2 Pro on 2 October and draws every free account's pictures, only takes reference photos between 256 pixels a side and 4 megapixels. FLUX.2 Pro had no such limit. It was the only FLUX picture since the switch, so every phone photo would have failed, attached or behind a character.",
+      "Fixed: a photo outside that window is resized before it's sent. A bigger one comes down to 2048 pixels on its long edge (the same cap GPT Image already uses), an upright JPEG, or a PNG if it has transparency. A tiny one goes up to 256. Photos already inside the window are sent exactly as before. If a photo can't be fetched or read, it goes as it is, as it did before. Character pictures made on FLUX get the same fix.",
+      "Checked against FLUX 3 itself for $0: a request carrying a resized 2048 x 1536 photo next to a 4032 x 3024 one came back with an error naming only the big one. The resized one passed, and the refusal means nothing was drawn or charged. 14 new tests.",
+    ],
+  },
+  {
     version: "1.222.0",
     build: 261,
     date: "2026-10-03",

@@ -6,6 +6,7 @@ import {
   LAYER_RECUT_RESOLUTION,
 } from "@/lib/generations/layers";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { fitReferencesForFlux } from "@/lib/generations/providers/flux-references";
 import { IMAGE_RESULT_REFUSED } from "@/lib/generations/providers/refusal-messages";
 import {
   DEFAULT_IMAGE_ASPECT,
@@ -114,7 +115,9 @@ export async function generateImageWithFlux(
     // shape is left at "auto", which follows the first reference photo, as
     // FLUX.2's default image_size did.
     body = { prompt, resolution: "1k" };
-    if (referenceUrls.length) body.image_urls = referenceUrls.slice(0, FLUX_MAX_INPUT_IMAGES);
+    // Each photo fitted to FLUX 3's 256px-to-4MP window first — a 12 MP
+    // phone photo was a 422 (flux-references.ts has the incident).
+    if (referenceUrls.length) body.image_urls = await fitReferencesForFlux(referenceUrls.slice(0, FLUX_MAX_INPUT_IMAGES));
   }
 
   const res = await fetchWithTimeout(
@@ -138,7 +141,8 @@ export async function generateImageWithFlux(
     // Pro, 2026-09-23). Not yet seen from FLUX 3, whose answer carries no
     // has_nsfw_concepts field. Only a 422 that names the content is read as a
     // refusal: the same status also means a malformed input (a reference
-    // photo over 4 MP), which is our fault, not the person's.
+    // photo over 4 MP, before flux-references.ts fitted them), which is our
+    // fault, not the person's.
     if (res.status === 422 && /safety|content|policy|nsfw|moderat|flagged/i.test(text)) {
       console.warn(`[flux] 422 from ${endpoint}: ${text.slice(0, 300)}`);
       throw new FluxSafetyRejection(IMAGE_RESULT_REFUSED);
