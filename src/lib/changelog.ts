@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.221.0",
+    build: 260,
+    date: "2026-10-03",
+    title: "See every email you send, what happened to it, and the replies",
+    items: [
+      "Every note sent with Write to them is now kept, with what happened to it: Sent, Delivered, Opened, Delayed, Bounced or Marked as spam, as the email service reports it.",
+      "A person's page has an Emails card: what you wrote to them and their replies, oldest first, each one opening to the whole message, with a Write button. Admin → Emails starts with Sent & replies: everything, newest first, with each person's name.",
+      "Replies come into Picacho under the note they answer, your phone gets \"Nadia replied\", and a copy still goes to hello@picacho.ai (reply to it from there and it goes straight to them).",
+      "The phone admin app shows the same Emails on each person, with Write.",
+      "Needs supabase/pending/admin-emails.sql, then two settings in Resend (a webhook, and receiving for replies.picacho.ai); until then notes still send and the lists stay empty.",
+    ],
+  },
+  {
     version: "1.220.0",
     build: 259,
     date: "2026-10-03",

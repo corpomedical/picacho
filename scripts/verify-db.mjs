@@ -224,6 +224,13 @@ const COLUMNS = {
   user_tool_days: ["user_id", "day", "tool", "first_at", "last_at"],
   subscription_events: ["user_id", "kind", "source", "plan", "subscription_id", "ends_at", "external_id", "created_at"],
   retention_alerts: ["user_id", "kind", "episode", "sent_at"],
+  // Emails sent and received (supabase/pending/admin-emails.sql, 2026-10-03):
+  // notes from Write to them, what Resend reported, and the replies. Fails
+  // soft without it (notes still send, the lists stay empty).
+  admin_emails: [
+    "user_id", "admin_id", "direction", "from_email", "to_email", "subject", "body",
+    "resend_id", "reply_to_id", "status", "delivered_at", "opened_at", "clicked_at", "created_at",
+  ],
   // Astra Sets (applied/2026-09-10/astra-sets.sql). Every column the actions write is
   // listed: the service role writes them, so a missing one fails a build
   // mid-flight rather than at the page.

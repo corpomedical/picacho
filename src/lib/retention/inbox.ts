@@ -38,6 +38,13 @@ export function writeDraft(q: Pick<GoingQuiet, "kind" | "email" | "optedOut" | "
   };
 }
 
+/** A plain note to anyone (a person's Emails card), when no going-quiet draft fits. */
+export function noteDraft(p: { name: string; email: string | null; optedOut: boolean }): WriteDraft | null {
+  if (!p.email || p.optedOut) return null;
+  const first = p.name.trim().split(/\s+/)[0] || "there";
+  return { to: p.email, subject: "Hello from Picacho", message: `Hi ${first},\n\n` };
+}
+
 export const QUIET_KIND_LABEL: Record<GoingQuiet["kind"], string> = {
   paying: "Paying",
   cancelled: "Cancelled",

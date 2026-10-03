@@ -3,6 +3,9 @@ import { ADMIN_ACTION_COLUMNS, actionLabel, emailsForIds, type AdminActionRow } 
 import { creditsHeld, modelName } from "@/lib/admin/today";
 import { loadPersonPath } from "@/lib/retention/load";
 import { pathSummary } from "@/lib/retention/api";
+import { noteDraft } from "@/lib/retention/inbox";
+import { loadThread, STATUS_LABEL } from "@/lib/email/threads";
+import { replyOnly } from "@/lib/email/inbound";
 
 // GET /api/admin/person?id=<uuid> — one person for the phone admin app's
 // person sheet (2026-09-28 admin redesign): who they are, their balances,
@@ -32,7 +35,7 @@ export async function GET(request: Request) {
     .maybeSingle();
   if (!person) return json(request, { error: "That person wasn't found." }, 404);
 
-  const [{ data: gens }, notes, changes, { data: templates }, path] = await Promise.all([
+  const [{ data: gens }, notes, changes, { data: templates }, path, thread] = await Promise.all([
     admin
       .from("generations")
       .select("id, prompt_input, status, created_at, content_type, video_model_id, model_id, credits_used, purchased_credits_used, bonus_credits_used")
@@ -44,6 +47,8 @@ export async function GET(request: Request) {
     admin.from("email_templates").select("key, subject").order("key"),
     // Who comes back (2026-10-03): their four steps, a banner when they're slipping away, the tools they use.
     loadPersonPath(admin, id),
+    // Emails sent and received (2026-10-03): their thread, oldest first.
+    loadThread(admin, id),
   ]);
 
   const genIds = (gens ?? []).map((g) => g.id as string);
@@ -81,5 +86,21 @@ export async function GET(request: Request) {
     })),
     templates: templates ?? [],
     retention: path ? pathSummary(path) : null,
+    emails: thread.map((e) => ({
+      id: e.id,
+      out: e.direction === "out",
+      subject: e.subject,
+      text: e.direction === "out" ? e.body : replyOnly(e.body),
+      status: e.direction === "in" ? "Reply" : e.opened_at && (e.status === "delivered" || e.status === "sent") ? "Opened" : STATUS_LABEL[e.status],
+      bad: e.status === "bounced" || e.status === "complained" || e.status === "failed",
+      from: e.from_email,
+      to: e.to_email,
+      at: e.created_at,
+    })),
+    write: noteDraft({
+      name: (person.full_name as string | null)?.trim() || ((person.email as string | null) ?? "").split("@")[0],
+      email: (person.email as string | null) ?? null,
+      optedOut: person.marketing_opt_out === true,
+    }),
   });
 }

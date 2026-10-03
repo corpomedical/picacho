@@ -58,6 +58,10 @@ export type EmailMessage = {
   // opting users out (the unsubscribe route's GET is a confirmation page;
   // only the POST flips the flag — 2026-09-05 audit).
   unsubscribeUrl?: string;
+  // Where replies go (2026-10-03, emails sent and received): a note from the
+  // admin sets reply+<id>@<EMAIL_REPLY_DOMAIN> so the reply comes back into
+  // Picacho, threaded. Unset = replies go to the From address, as before.
+  replyTo?: string;
 };
 
 // The one-click headers for a message that carries an unsubscribe link.
@@ -76,7 +80,7 @@ function unsubscribeHeaders(url: string | undefined): Record<string, string> | u
  * `{error}` so callers (admin actions that want to redirect with a banner
  * message) don't need try/catch plumbing.
  */
-export async function sendEmail(message: EmailMessage): Promise<{ error: string | null }> {
+export async function sendEmail(message: EmailMessage): Promise<{ error: string | null; id?: string | null }> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return { error: missingKeyWarning("sendEmail") };
 
@@ -95,6 +99,7 @@ export async function sendEmail(message: EmailMessage): Promise<{ error: string 
           subject: message.subject,
           html: message.html,
           ...(message.text ? { text: message.text } : {}),
+          ...(message.replyTo ? { reply_to: message.replyTo } : {}),
           ...(message.unsubscribeUrl ? { headers: unsubscribeHeaders(message.unsubscribeUrl) } : {}),
         }),
       },
@@ -107,7 +112,9 @@ export async function sendEmail(message: EmailMessage): Promise<{ error: string 
       console.error("sendEmail failed", { to: message.to, subject: message.subject, error });
       return { error };
     }
-    return { error: null };
+    // Resend's id for the email: its webhooks (delivered, opened, bounced…) name it.
+    const sent = (await res.json().catch(() => null)) as { id?: unknown } | null;
+    return { error: null, id: typeof sent?.id === "string" ? sent.id : null };
   } catch (err) {
     const error = err instanceof Error ? err.message : "Network error sending email.";
     console.error("sendEmail failed", { to: message.to, subject: message.subject, err });

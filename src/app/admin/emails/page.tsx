@@ -8,6 +8,8 @@ import { Input, Label, Textarea } from "@/components/ui/field";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner, AdminSuccessBanner } from "@/components/admin-error-banner";
 import { LocalDate } from "@/components/local-date";
+import { EmailList } from "@/components/admin/email-list";
+import { loadRecentEmails, replyDomain } from "@/lib/email/threads";
 import {
   EmailTemplateCard,
   TemplateVariablesLegend,
@@ -133,6 +135,10 @@ export default async function AdminEmailsPage({
     credits: String(PLAN_LIMITS[previewPlan]),
   };
   const adminUnsubscribeUrl = await unsubscribeUrl(userId);
+  // Sent & replies (2026-10-03): every note written from Write to them, what
+  // happened to it, and the replies that came back.
+  const recent = await loadRecentEmails(admin);
+  const repliesOn = !!replyDomain();
 
   return (
     <div>
@@ -147,6 +153,26 @@ export default async function AdminEmailsPage({
         Announcement templates, sent by hand to a chosen audience. Nothing here ever sends on its
         own, and account emails (sign-up confirmation, password reset) are a separate system.
       </p>
+
+      <section className="mt-6 overflow-hidden rounded-2xl border border-atelier-rule bg-atelier-surface">
+        <div className="flex flex-wrap items-baseline gap-2 px-5 pb-2.5 pt-4">
+          <h2 className="mr-auto text-[15px] font-semibold text-atelier-ink">
+            Sent &amp; replies <span className="font-normal text-atelier-muted">· {recent.rows.length}</span>
+          </h2>
+          <span className="text-xs text-atelier-muted">
+            {repliesOn ? "Replies come in here, with a copy to hello@picacho.ai" : "Replies still go to hello@picacho.ai until receiving is set up"}
+          </span>
+        </div>
+        <EmailList
+          rows={recent.rows}
+          showPerson
+          empty={
+            recent.ready
+              ? "Nothing sent from Write to them yet. Each note shows here with what happened to it (sent, delivered, opened, bounced), and the replies that come back."
+              : "Run supabase/pending/admin-emails.sql to start listing sent emails and replies."
+          }
+        />
+      </section>
 
       {!emailConfigured && (
         <Card className="mt-6 border-amber-200 bg-amber-50 p-5">

@@ -17,6 +17,8 @@ import { PLAN_LABELS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { renderTemplate } from "@/lib/email/render";
 import { sendEmail, unsubscribeUrl } from "@/lib/email/send";
 import { renderNote } from "@/lib/email/signature";
+import { finishNote, replyDomain, startNote } from "@/lib/email/threads";
+import { replyAddress } from "@/lib/email/inbound";
 import { NOTE_MESSAGE_MAX, NOTE_SUBJECT_MAX } from "@/lib/admin/note-limits";
 import { getOrigin } from "@/lib/origin";
 
@@ -424,8 +426,27 @@ export async function opWritePerson(
 
   const unsubscribe = await unsubscribeUrl(person.id as string);
   const { html, text } = renderNote(message, unsubscribe);
-  const { error } = await sendEmail({ to: person.email as string, subject, html, text, unsubscribeUrl: unsubscribe });
-  if (error) return no("Couldn't send the email. Details are in the server log.");
+  // Written down first (emails sent and received, 2026-10-03): its id is the
+  // reply address, so their answer comes back into Picacho under this note.
+  const noteId = await startNote(admin, {
+    userId: person.id as string,
+    adminId: actor,
+    from: process.env.EMAIL_FROM || "Picacho <hello@picacho.ai>",
+    to: person.email as string,
+    subject,
+    body: message,
+  });
+  const domain = replyDomain();
+  const sent = await sendEmail({
+    to: person.email as string,
+    subject,
+    html,
+    text,
+    unsubscribeUrl: unsubscribe,
+    ...(noteId && domain ? { replyTo: replyAddress(noteId, domain) } : {}),
+  });
+  if (noteId) await finishNote(admin, noteId, { resendId: sent.id ?? null, failed: !!sent.error });
+  if (sent.error) return no("Couldn't send the email. Details are in the server log.");
 
   await logAdminAction(admin, actor, {
     action: "email.note",

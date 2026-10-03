@@ -32,6 +32,10 @@ import { LocalDate } from "@/components/local-date";
 import { getUserActivity, formatDuration } from "@/lib/admin/activity";
 import { loadPersonPath } from "@/lib/retention/load";
 import { PersonPathCard } from "@/components/admin/person-path-card";
+import { EmailList } from "@/components/admin/email-list";
+import { WriteToThemButton } from "@/components/admin/write-to-them";
+import { loadThread } from "@/lib/email/threads";
+import { noteDraft, writeDraft } from "@/lib/retention/inbox";
 import { ADMIN_LOOK_LABELS, ADMIN_MODE_LABELS, parseAppLook, parseAppMode } from "@/lib/light/mode";
 import {
   ADMIN_ACTION_COLUMNS,
@@ -209,6 +213,16 @@ export default async function AdminUserDetailPage({
   const activity = (await getUserActivity([user])).get(user.id) ?? null;
   // Who comes back (2026-10-03): their four steps and the tools they use.
   const path = await loadPersonPath(serviceClient, user.id);
+  // Emails sent and received (2026-10-03): their thread, newest at the bottom.
+  const thread = await loadThread(serviceClient, user.id);
+  const quietKind = path?.cancel ? "cancelled" : path?.paying && (path.quietDays ?? 0) >= 7 ? "paying" : path?.stalled ? "stalled" : null;
+  const draft =
+    (quietKind && path ? writeDraft({ kind: quietKind, name: path.name, email: path.email, optedOut: path.optedOut }) : null) ??
+    noteDraft({
+      name: (user.full_name as string | null)?.trim() || (user.email ?? "").split("@")[0],
+      email: user.email ?? null,
+      optedOut: user.marketing_opt_out === true,
+    });
 
   const plan = (user.plan ?? "none") as PlanId;
 
@@ -652,6 +666,24 @@ export default async function AdminUserDetailPage({
 
         <div className="min-w-0 space-y-6 lg:col-span-2">
           {path && <PersonPathCard path={path} />}
+
+          <Card pad="none">
+            <div className="flex flex-wrap items-center gap-2.5 px-5 pb-2 pt-4">
+              <h2 className="text-sm font-semibold text-neutral-900">
+                Emails <span className="font-normal text-neutral-400">· {thread.length}</span>
+              </h2>
+              {draft && (
+                <WriteToThemButton
+                  userId={user.id}
+                  name={(user.full_name as string | null)?.trim() || (user.email ?? "").split("@")[0]}
+                  {...draft}
+                  label="Write"
+                  className="ml-auto inline-flex h-8 items-center rounded-full bg-[var(--apple-fill)] px-3.5 text-[12.5px] font-medium text-[var(--apple-blue)]"
+                />
+              )}
+            </div>
+            <EmailList rows={thread} empty="Nothing written to them from Picacho yet. What you send with Write, and their replies, show here." />
+          </Card>
 
           {/* Sign-in activity. Its own card rather than more lines in the
               identity block: these are the facts you actually come to this
