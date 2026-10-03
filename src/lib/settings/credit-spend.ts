@@ -5,7 +5,7 @@
 // counts (getMonthlyUsage sums every row in the window, deleted ones
 // included, because the credits were spent). This only splits it.
 
-export type SpendKind = "videos" | "images" | "helios" | "upscales" | "layers" | "mystique";
+export type SpendKind = "videos" | "images" | "helios" | "upscales" | "layers" | "mystique" | "editor";
 
 export type SpendRow = {
   id: string;
@@ -26,6 +26,8 @@ export function spendKind(row: SpendRow, heliosIds: ReadonlySet<string>): SpendK
   if (model === "seedream-layerize" || model === "layer-edit") return "layers";
   // Mystique's rows are its recast-* engines (lib/recast/recast.ts).
   if (model.startsWith("recast")) return "mystique";
+  // Director's Cut's cuts, changes, music and exports (lib/editor/charge.ts).
+  if (model.startsWith("video-editor")) return "editor";
   return row.content_type === "video" ? "videos" : "images";
 }
 

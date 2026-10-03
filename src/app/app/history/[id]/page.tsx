@@ -283,7 +283,7 @@ export default async function HistoryDetailPage({
         keepGoingDoors.push({ key: "live", href: `/app/live?from=${q}`, label: h.doorLive, sub: h.doorLiveSub, tool: t.nav.live });
       }
       // Effects (2026-09-29): a one-tap effect makes this picture move.
-      if (gates.cutVisible) {
+      if (gates.effectsVisible) {
         keepGoingDoors.push({ key: "effects", href: `/app/effects?take=${q}`, label: h.doorEffects, sub: h.doorEffectsSub, tool: t.nav.effects });
       }
       // A set from a photo is admins only behind its own switch (sets/data.ts
@@ -298,7 +298,7 @@ export default async function HistoryDetailPage({
       }
       // Effects (2026-09-29): titles, credits and sound for this video — the
       // same gate as Director's Cut, whose engine it runs on.
-      if (gates.cutVisible && (seconds === 0 || seconds <= EFFECTS_MAX_FILM_SECONDS)) {
+      if (gates.effectsVisible && (seconds === 0 || seconds <= EFFECTS_MAX_FILM_SECONDS)) {
         // Titles only fit longer films; effects in the shot take up to 15 s. The page opens on the tab that fits.
         keepGoingDoors.push({ key: "effects", href: `/app/effects?take=${q}${seconds > 15 ? "&tab=titles" : ""}`, label: h.doorEffects, sub: h.doorEffectsSub, tool: t.nav.effects });
       }

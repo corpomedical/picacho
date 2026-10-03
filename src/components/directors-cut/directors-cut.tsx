@@ -34,6 +34,7 @@ import {
   type EditSummary,
 } from "@/lib/editor/actions";
 import { ASPECT_HINTS, EDITOR_BUCKET, MAX_CLIPS, SONG_TYPES, type AspectHint } from "@/lib/editor/job";
+import { changeHold, cutHold, typicalCut } from "@/lib/editor/pricing";
 import { EditBay, type DirectorPart } from "./bay/edit-bay";
 
 const WORKING = new Set(["analyzing", "directing", "bundling", "rendering"]);
@@ -47,11 +48,14 @@ export function DirectorsCut({
   initialEdits,
   initialDetail = null,
   offMusic = [],
+  isAdmin = false,
 }: {
   initialEdits: EditSummary[];
   initialDetail?: EditDetail | null;
   /** Music engines taken off the menu on Admin → Models. */
   offMusic?: string[];
+  /** Admins are not charged (charge.ts), so their price lines say so. */
+  isAdmin?: boolean;
 }) {
   const [edits, setEdits] = useState(initialEdits);
   const [selectedId, setSelectedId] = useState<string | null>(initialDetail?.id ?? initialEdits[0]?.id ?? null);
@@ -113,7 +117,7 @@ export function DirectorsCut({
     return (
       <div className="scroll-mt-4">
         <div className="overflow-hidden rounded-[16px] bg-[#0b0c0f] text-[#a4a9b4] shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
-          <StartPage guard={guard} onStarted={onStarted} />
+          <StartPage guard={guard} onStarted={onStarted} isAdmin={isAdmin} />
           {error && <p className="px-6 pb-6 text-sm text-[#f0a3a3]">{error}</p>}
         </div>
       </div>
@@ -130,12 +134,14 @@ export function DirectorsCut({
         detail={detail}
         onRefresh={onRefresh}
         offMusic={offMusic}
+        isAdmin={isAdmin}
         working={working}
-        director={(part) => <Notes part={part} detail={detail} guard={guard} onSent={onRefresh} />}
+        director={(part) => <Notes part={part} detail={detail} guard={guard} onSent={onRefresh} isAdmin={isAdmin} />}
         newEdit={(close) => (
           <div className="min-h-0 flex-1 overflow-y-auto">
             <StartPage
               guard={guard}
+              isAdmin={isAdmin}
               onBack={close}
               onStarted={async (id) => {
                 close();
@@ -156,7 +162,7 @@ type Guard = <T>(work: () => Promise<T>) => Promise<T | null>;
 // ---------------------------------------------------------------- the brief
 
 /** The page for a new edit: the suite's bar, the question, the footage, the slab to write in. */
-function StartPage({ guard, onStarted, onBack }: { guard: Guard; onStarted: (id: string) => Promise<void>; onBack?: () => void }) {
+function StartPage({ guard, onStarted, onBack, isAdmin = false }: { guard: Guard; onStarted: (id: string) => Promise<void>; onBack?: () => void; isAdmin?: boolean }) {
   const { t } = useLocale();
   const d = t.directorsCut;
   return (
@@ -191,15 +197,15 @@ function StartPage({ guard, onStarted, onBack }: { guard: Guard; onStarted: (id:
             <h1 className="font-display text-[30px] font-semibold leading-[1.05] tracking-[-0.015em] text-[#eceef2] lg:text-[40px]">{d.startTitle}</h1>
             <p className="mt-3 max-w-[620px] text-[15px] leading-relaxed text-[#8b909b]">{d.lede}</p>
           </div>
-          <span className="font-mono text-[11.5px] text-[#6c717c]">{d.testing}</span>
+          {isAdmin && <span className="font-mono text-[11.5px] text-[#6c717c]">{d.testing}</span>}
         </div>
-        <BriefForm guard={guard} onStarted={onStarted} />
+        <BriefForm guard={guard} onStarted={onStarted} isAdmin={isAdmin} />
       </div>
     </>
   );
 }
 
-function BriefForm({ onStarted, guard }: { onStarted: (id: string) => Promise<void>; guard: Guard }) {
+function BriefForm({ onStarted, guard, isAdmin = false }: { onStarted: (id: string) => Promise<void>; guard: Guard; isAdmin?: boolean }) {
   const { t } = useLocale();
   const d = t.directorsCut;
   const [files, setFiles] = useState<Picked[]>([]);
@@ -416,7 +422,15 @@ function BriefForm({ onStarted, guard }: { onStarted: (id: string) => Promise<vo
           </button>
         </div>
       </div>
-      <p className="-mt-3.5 text-right font-mono text-[11.5px] text-[#6c717c]">{d.leave}</p>
+      <p className="-mt-3.5 text-right font-mono text-[11.5px] leading-relaxed text-[#6c717c]">
+        {!isAdmin && (
+          <>
+            {formatMsg(d.priceCut, { n: cutHold(files.reduce((n, f) => n + f.file.size, 0)), low: typicalCut().low, high: typicalCut().high })}
+            <br />
+          </>
+        )}
+        {d.leave}
+      </p>
       {problem && <p className="text-sm text-[#f0a3a3]">{problem}</p>}
     </div>
   );
@@ -713,7 +727,7 @@ function useFrames(url: string | null, times: number[]): (string | null)[] {
  * if the change wants one. A phone draws the two parts apart — the
  * conversation in its tab, the box at the foot of the bay.
  */
-function Notes({ detail, guard, onSent, part = "all" }: { detail: EditDetail | null; guard: Guard; onSent: () => Promise<void>; part?: DirectorPart }) {
+function Notes({ detail, guard, onSent, part = "all", isAdmin = false }: { detail: EditDetail | null; guard: Guard; onSent: () => Promise<void>; part?: DirectorPart; isAdmin?: boolean }) {
   const { t } = useLocale();
   const d = t.directorsCut;
   const working = detail !== null && WORKING.has(detail.stage);
@@ -747,6 +761,18 @@ function Notes({ detail, guard, onSent, part = "all" }: { detail: EditDetail | n
           {d.phase[detail.phase as keyof typeof d.phase] ?? ""}
         </p>
       )}
+      {/* What each cut held and came to (charge.ts) — admins hold nothing. */}
+      {(detail?.holds ?? [])
+        .filter((h) => h.held > 0)
+        .map((h) => (
+          <p key={`hold-${h.turn}`} className="font-mono text-[11.5px] text-[#6c717c]">
+            {h.charged === null
+              ? formatMsg(d.holding, { cut: h.turn, n: h.held })
+              : h.charged === 0
+                ? formatMsg(d.chargedNone, { cut: h.turn })
+                : formatMsg(d.charged, { cut: h.turn, used: h.charged, back: h.held - h.charged })}
+          </p>
+        ))}
       {detail?.stage === "done" && (
         <Link href="/app/history" className="text-[13px] text-[#e0a468] hover:text-[#f0bd86]">
           {d.openHistory}
@@ -758,10 +784,10 @@ function Notes({ detail, guard, onSent, part = "all" }: { detail: EditDetail | n
   if (part === "composer")
     return (
       <div className="px-3 pb-3 pt-2.5">
-        <Composer detail={detail} guard={guard} onSent={onSent} row />
+        <Composer detail={detail} guard={guard} onSent={onSent} isAdmin={isAdmin} row />
       </div>
     );
-  const composer = <Composer detail={detail} guard={guard} onSent={onSent} />;
+  const composer = <Composer detail={detail} guard={guard} onSent={onSent} isAdmin={isAdmin} />;
   return (
     <div className="flex h-full min-h-0 flex-col">
       {thread}
@@ -771,7 +797,7 @@ function Notes({ detail, guard, onSent, part = "all" }: { detail: EditDetail | n
 }
 
 /** The box to ask for a change; `row` lays it out on one line (a phone's foot). */
-function Composer({ detail, guard, onSent, row = false }: { detail: EditDetail | null; guard: Guard; onSent: () => Promise<void>; row?: boolean }) {
+function Composer({ detail, guard, onSent, row = false, isAdmin = false }: { detail: EditDetail | null; guard: Guard; onSent: () => Promise<void>; row?: boolean; isAdmin?: boolean }) {
   const { t } = useLocale();
   const d = t.directorsCut;
   const [text, setText] = useState("");
@@ -894,6 +920,8 @@ function Composer({ detail, guard, onSent, row = false }: { detail: EditDetail |
     </button>
   );
   const box = "bg-[#15171c] shadow-[0_0_0_1px_rgba(255,255,255,0.07)] focus-within:shadow-[0_0_0_1px_rgba(224,164,104,0.5)]";
+  // What a change holds (pricing.ts), shown while there is something to send.
+  const price = !isAdmin && canAsk && (text.trim() || song) ? formatMsg(d.priceChange, { n: changeHold((detail?.footageBytes ?? 0) + (song?.size ?? 0)) }) : null;
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     void send();
@@ -919,6 +947,7 @@ function Composer({ detail, guard, onSent, row = false }: { detail: EditDetail |
         </form>
       )}
       {row && busy && <p className="truncate px-1 font-mono text-[11px] text-[#a4a9b4]">{busy}</p>}
+      {!busy && price && <p className="px-1 font-mono text-[11px] leading-snug text-[#6c717c]">{price}</p>}
       {problem && <p className="text-sm text-[#f0a3a3]">{problem}</p>}
     </div>
   );

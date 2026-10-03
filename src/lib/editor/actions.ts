@@ -1,9 +1,15 @@
 "use server";
 
-// The editor's doors from the browser. Each checks who is asking (admins
-// only — lib/editor/enabled.ts), then only ever writes through the service
-// role: video_edits has no write policy for people, and the footage bucket
-// has no policy for people at all.
+// The editor's doors from the browser. Each checks who is asking (admins,
+// and paid plans once `video_editor_paid_plans` is on — enabled.ts
+// editorGate), then only ever writes through the service role: video_edits
+// has no write policy for people, and the footage bucket has no policy for
+// people at all.
+//
+// Credits (operator, 2026-10-03: "Pay what it uses"): "Cut it" and a change
+// HOLD their most (pricing.ts) before Opus starts, settled when the turn
+// ends (advance.ts); music and Export are fixed prices, given back when
+// they fail (charge.ts).
 //
 //   startEdit   → a row in `uploading` and one signed upload token per file,
 //                 for a path the server chose.
@@ -16,6 +22,7 @@
 //   getEdit / listEdits → the bench.
 
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { checkGenerationAllowance, consumeBonusCredits, consumePurchasedCredits } from "@/lib/generations/core";
 import { offered } from "@/lib/models/controls";
 import { rateLimited } from "@/lib/rate-limit";
 import { alertEditorOutOfCredit } from "@/lib/push/admin-alerts";
@@ -23,7 +30,19 @@ import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
 import { deliverOne, derivedUuid, OUT_OF_CREDIT_ERROR } from "./advance";
 import { kickEdit } from "./kick";
 import { isEffectsRow } from "./effects";
-import { isBillingError, sendChange, type Activity } from "./agent";
+import { isBillingError, raiseBudget, sendChange, type Activity } from "./agent";
+import {
+  DAILY_FAILED_LIMIT,
+  EDITOR_EXPORT_MODEL_ID,
+  EDITOR_MODEL_ID,
+  EDITOR_MUSIC_MODEL_ID,
+  failedToday,
+  placeHold,
+  settleHold,
+  type Hold,
+  type HoldDeps,
+} from "./charge";
+import { changeHold, composeCredits, cutHold, EXPORT_USD_PER_MINUTE, exportCredits } from "./pricing";
 import type { ChangeExtras } from "./agent-prompt";
 import type { ProbeResult } from "./analyze";
 import { probeClip } from "./work";
@@ -32,7 +51,7 @@ import { bundlePlan, type ExportRecord } from "./export";
 import { aceBody, composeCostUsd, elevenBody, ENGINES, MAX_TAKES, promptText, sectionsFromCuts, type ComposerEngine, type Section } from "./composer";
 import { buildZip, type ZipEntry } from "./zip";
 import { HEYGEN_MAX_BUNDLE_BYTES, heygenConfigured, readRender, startRender, uploadBundle } from "./heygen";
-import { EDITOR_NOT_OPEN, EDITOR_UNAVAILABLE, editorAllowed, isEditorEnabled } from "./enabled";
+import { EDITOR_UNAVAILABLE, editorGate, isEditorEnabled, isEditorOpenToPlans } from "./enabled";
 import {
   ASPECT_HINTS,
   EDITOR_BUCKET,
@@ -53,17 +72,51 @@ import {
   type Phase,
 } from "./job";
 
-type Access = { error: string } | { error: null; userId: string };
+type Access = { error: string } | { error: null; userId: string; isAdmin: boolean };
 
 async function editorAccess(): Promise<Access> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   if (!data.user) return { error: SESSION_EXPIRED_MESSAGE };
-  const { data: profile } = await supabase.from("profiles").select("role, status").eq("id", data.user.id).maybeSingle();
-  if (!editorAllowed(profile)) return { error: EDITOR_NOT_OPEN };
+  const { data: profile } = await supabase.from("profiles").select("role, status, plan, plan_status").eq("id", data.user.id).maybeSingle();
+  const isAdmin = profile?.role === "admin";
+  const gate = editorGate(profile, isAdmin || (await isEditorOpenToPlans(supabase)));
+  if (gate.error !== null) return { error: gate.error };
   if (!(await isEditorEnabled(supabase))) return { error: EDITOR_UNAVAILABLE };
-  return { error: null, userId: data.user.id };
+  return { error: null, userId: data.user.id, isAdmin };
 }
+
+/** The hold's rails for the person asking (charge.ts placeHold). */
+async function holdDeps(userId: string): Promise<HoldDeps> {
+  const supabase = await createClient();
+  return {
+    admin: createAdminClient(),
+    allowance: (credits) => checkGenerationAllowance(supabase, userId, credits, { skipCooldown: true }),
+    consumePurchased: (n) => consumePurchasedCredits(supabase, userId, n),
+    consumeBonus: (n) => consumeBonusCredits(supabase, userId, n),
+  };
+}
+
+/** A cut or change that failed gives its credits back — so after a few in a day, the next waits for tomorrow. */
+async function tooManyFailures(access: { userId: string; isAdmin: boolean }): Promise<boolean> {
+  return !access.isAdmin && (await failedToday(createAdminClient(), access.userId)) >= DAILY_FAILED_LIMIT;
+}
+const TOO_MANY_FAILURES = "A few of your edits didn't finish today, so new ones wait until tomorrow. Write to hello@picacho.ai if something looks wrong.";
+
+/** A hold refused for credits says what it needed. */
+function holdRefusal(hold: Exclude<Hold, { error: null }>, credits: number, what: "cut" | "change" | "music" | "export"): string {
+  if (hold.code === "busy") return hold.error;
+  const lead =
+    what === "cut"
+      ? `A cut holds up to ${credits} credits while Opus works — you pay what it uses and the rest comes back.`
+      : what === "change"
+        ? `A change holds up to ${credits} credits while Opus works — you pay what it uses and the rest comes back.`
+        : `This costs ${credits} credit${credits === 1 ? "" : "s"}.`;
+  // The shared allowance words explain video models' weights; nothing here has one.
+  return `${lead} ${hold.error.replace(" (some models cost more than 1 per video)", "")}`;
+}
+
+const sumBytes = (clips: { bytes: number }[]) => clips.reduce((n, c) => n + (Number(c.bytes) || 0), 0);
 
 export type StartedEdit = { error: null; editId: string; uploads: { path: string; token: string }[] } | { error: string };
 
@@ -87,6 +140,15 @@ export async function startEdit(input: {
   const editId = crypto.randomUUID();
   const planned = planUploads(access.userId, editId, input?.files);
   if (planned.error !== null) return { error: planned.error };
+
+  // Before anything is uploaded: can this account cover the cut's hold?
+  // (The hold itself is taken on submit, once the files are really there.)
+  if (!access.isAdmin) {
+    if (await tooManyFailures(access)) return { error: TOO_MANY_FAILURES };
+    const credits = cutHold(sumBytes(planned.clips));
+    const allowance = await checkGenerationAllowance(await createClient(), access.userId, credits, { skipCooldown: true });
+    if (allowance.error) return { error: holdRefusal({ error: allowance.error, code: "noCredits" }, credits, "cut") };
+  }
 
   const admin = createAdminClient();
   const uploads: { path: string; token: string }[] = [];
@@ -141,12 +203,35 @@ export async function submitEdit(editId: string): Promise<{ error: string | null
     if (size === undefined) return { error: `"${clip.name}" didn't finish uploading.` };
     if (size !== clip.bytes) return { error: `"${clip.name}" arrived incomplete — upload it again.` };
   }
-  const { error } = await admin
+  // The cut's hold: the most it can cost, settled when Opus delivers (advance.ts).
+  if (await tooManyFailures(access)) return { error: TOO_MANY_FAILURES };
+  const bytes = sumBytes(row.clips);
+  const credits = cutHold(bytes);
+  const hold = await placeHold(await holdDeps(access.userId), {
+    userId: access.userId,
+    rowId: crypto.randomUUID(),
+    credits,
+    modelId: EDITOR_MODEL_ID,
+    prompt: row.brief || "Director's Cut",
+    detail: `Director's Cut · cutting · holding ${credits} credits`,
+    hidden: true,
+  });
+  if (hold.error !== null) return hold.code === "busy" ? { error: null } : { error: holdRefusal(hold, credits, "cut") };
+  const { data: moved, error } = await admin
     .from("video_edits")
-    .update({ stage: "analyzing", progress: "Reading your footage", updated_at: new Date().toISOString() })
+    .update({
+      stage: "analyzing",
+      progress: "Reading your footage",
+      plan: { ...(row.plan ?? { outputs: [], history: [] }), holds: [{ turn: 1, rowId: hold.rowId, credits: hold.credits, bytes }] },
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", row.id)
-    .eq("stage", "uploading");
-  if (error) return { error: "Couldn't start the edit. Try again." };
+    .eq("stage", "uploading")
+    .select("id");
+  if (error || !moved?.length) {
+    if (hold.rowId) await settleHold(admin, hold.rowId, { charge: 0, outcome: "failed", detail: "Director's Cut · the cut didn't start, so nothing was charged." });
+    return { error: error ? "Couldn't start the edit. Try again." : null };
+  }
   kick(row.id);
   return { error: null };
 }
@@ -221,17 +306,55 @@ export async function reviseEdit(editId: string, note: string, song: FileOffer |
     return { error: "Couldn't send the change. Try again." };
   }
 
+  // The change's hold (the turn's first video is its row), then Opus's
+  // budget for it: what the session has spent plus the change's own limit.
+  if (await tooManyFailures(access)) return { error: TOO_MANY_FAILURES };
+  const turn = row.render.turn + 1;
+  const bytes = sumBytes(clips);
+  const credits = changeHold(bytes);
+  const hold = await placeHold(await holdDeps(access.userId), {
+    userId: access.userId,
+    rowId: crypto.randomUUID(),
+    credits,
+    modelId: EDITOR_MODEL_ID,
+    prompt: text || row.brief || "Director's Cut",
+    detail: `Director's Cut · Cut ${turn} · holding ${credits} credits`,
+    hidden: true,
+  });
+  if (hold.error !== null) return { error: holdRefusal(hold, credits, "change") };
+  const giveBack = async (detail: string) => {
+    if (hold.rowId) await settleHold(admin, hold.rowId, { charge: 0, outcome: "failed", detail }).catch(() => null);
+  };
+
+  let turnStartUsd: number;
+  try {
+    turnStartUsd = await raiseBudget(row.render.sessionId);
+  } catch (err) {
+    console.error(`[editor] budget for ${row.id} not raised:`, err instanceof Error ? err.message : err);
+    await giveBack("Director's Cut · the change didn't start, so nothing was charged.");
+    if (isBillingError(err)) {
+      await alertEditorOutOfCredit();
+      return { error: OUT_OF_CREDIT_ERROR };
+    }
+    return { error: "The editor didn't take the change. Try again in a moment." };
+  }
+
   const now = Date.now();
   const said: Note = song ? { role: "you", text, song: clips[clips.length - 1].name } : { role: "you", text };
-  // Claim the turn first, so two presses cannot send two notes.
+  // Claim the turn, so two presses cannot send two notes.
   const { data: claimed, error } = await admin
     .from("video_edits")
     .update({
       stage: "directing",
       progress: "Making your change",
       clips,
-      render: { ...row.render, turn: row.render.turn + 1, turnStartedAt: now },
-      plan: { outputs: row.plan?.outputs ?? [], history: [...(row.plan?.history ?? []), said] },
+      render: { ...row.render, turn, turnStartedAt: now, turnStartUsd },
+      plan: {
+        ...(row.plan ?? { outputs: [] }),
+        outputs: row.plan?.outputs ?? [],
+        history: [...(row.plan?.history ?? []), said],
+        holds: [...(row.plan?.holds ?? []), { turn, rowId: hold.rowId, credits: hold.credits, bytes }],
+      },
       error: null,
       attempts: 0,
       updated_at: new Date(now).toISOString(),
@@ -239,7 +362,10 @@ export async function reviseEdit(editId: string, note: string, song: FileOffer |
     .eq("id", row.id)
     .eq("stage", "done")
     .select("id");
-  if (error || !claimed?.length) return { error: "Couldn't send the change. Try again." };
+  if (error || !claimed?.length) {
+    await giveBack("Director's Cut · the change didn't start, so nothing was charged.");
+    return { error: "Couldn't send the change. Try again." };
+  }
   try {
     await sendChange(row.render.sessionId, text, extras);
   } catch (err) {
@@ -248,6 +374,7 @@ export async function reviseEdit(editId: string, note: string, song: FileOffer |
       .from("video_edits")
       .update({ stage: "done", progress: null, clips: row.clips, render: row.render, plan: row.plan, updated_at: new Date().toISOString() })
       .eq("id", row.id);
+    await giveBack("Director's Cut · the change didn't reach the editor, so nothing was charged.");
     if (isBillingError(err)) {
       await alertEditorOutOfCredit();
       return { error: OUT_OF_CREDIT_ERROR };
@@ -331,6 +458,10 @@ export type EditDetail = {
   exports: { id: string; source: string; status: "rendering" | "done" | "failed"; error: string | null; resultId: string | null }[];
   /** Music the composer wrote, newest last. */
   takes: { id: string; source: string; engine: "eleven" | "ace"; file: string; seconds: number }[];
+  /** What each cut (turn 1) and change held, and what it came to once it ended (null while it works). */
+  holds: { turn: number; held: number; charged: number | null }[];
+  /** The footage (and songs) a change downloads again — what its hold is sized on (pricing.ts changeHold). */
+  footageBytes: number;
 };
 
 /** One edit in full, for the bench. */
@@ -382,6 +513,8 @@ export async function getEdit(editId: string): Promise<{ error: string | null; e
       cutNumber: row.render?.turn ?? 1,
       exports: (row.plan?.exports ?? []).map((x) => ({ id: x.id, source: x.source, status: x.status, error: x.error ?? null, resultId: x.resultId ?? null })),
       takes: (row.plan?.takes ?? []).map((x) => ({ id: x.id, source: x.source, engine: x.engine, file: x.file, seconds: x.seconds })),
+      holds: (row.plan?.holds ?? []).map((h) => ({ turn: h.turn, held: h.credits, charged: typeof h.charged === "number" ? h.charged : null })),
+      footageBytes: sumBytes(row.clips),
     },
   };
 }
@@ -488,23 +621,42 @@ export async function exportProject(editId: string, generationId: string): Promi
     entries.push({ name: f.name, data });
   }
   const exportId = crypto.randomUUID();
+  const zip = buildZip(entries);
+  if (zip.byteLength > HEYGEN_MAX_BUNDLE_BYTES) return { error: "This edit is too large to render in one go (over 200 MB)." };
+  // A fixed price (pricing.ts exportCredits), given back if the render fails.
+  const credits = exportCredits(output.seconds);
+  const hold = await placeHold(await holdDeps(access.userId), {
+    userId: access.userId,
+    rowId: crypto.randomUUID(),
+    credits,
+    modelId: EDITOR_EXPORT_MODEL_ID,
+    prompt: `Export · ${output.title || "your edit"}`,
+    detail: `Director's Cut · Export · ${credits} credit${credits === 1 ? "" : "s"}`,
+    hidden: true,
+  });
+  if (hold.error !== null) return { error: holdRefusal(hold, credits, "export") };
+  const refund = async () => {
+    if (hold.rowId) await settleHold(admin, hold.rowId, { charge: 0, outcome: "failed", detail: "Director's Cut · the export didn't render, so it was free." }).catch(() => null);
+  };
   let renderId: string;
   try {
-    const zip = buildZip(entries);
-    if (zip.byteLength > HEYGEN_MAX_BUNDLE_BYTES) return { error: "This edit is too large to render in one go (over 200 MB)." };
     const assetId = await uploadBundle(zip, { filename: `${exportId}.zip`, idempotencyKey: exportId });
     const aspect = (["16:9", "9:16", "1:1"] as const).find((a) => a === output.aspect) ?? "16:9";
     renderId = await startRender(assetId, { aspect, fps: 30, quality: "high", title: output.title, idempotencyKey: `render-${exportId}` });
   } catch (err) {
     console.error(`[editor] export for ${row.id} failed:`, err instanceof Error ? err.message : err);
+    await refund();
     return { error: "The renderer didn't take this edit. Try again in a moment." };
   }
-  const record: ExportRecord = { id: exportId, source: generationId, renderId, status: "rendering", startedAt: Date.now() };
+  const record: ExportRecord = { id: exportId, source: generationId, renderId, status: "rendering", startedAt: Date.now(), chargeRowId: hold.rowId, credits: hold.credits };
   const { error } = await admin
     .from("video_edits")
     .update({ plan: { ...row.plan!, exports: [...(row.plan?.exports ?? []), record] }, updated_at: new Date().toISOString() })
     .eq("id", row.id);
-  if (error) return { error: "Couldn't keep track of the render. Try again." };
+  if (error) {
+    await refund();
+    return { error: "Couldn't keep track of the render. Try again." };
+  }
   return { error: null, exportId };
 }
 
@@ -536,6 +688,9 @@ export async function checkExport(editId: string, exportId: string): Promise<{ e
   };
   if (state.status === "failed" || !state.videoUrl || !source) {
     await settle({ status: "failed", error: state.failure ?? "The render failed." });
+    if (record.chargeRowId) {
+      await settleHold(admin, record.chargeRowId, { charge: 0, outcome: "failed", detail: "Director's Cut · the export didn't render, so it was free." }).catch(() => null);
+    }
     return { error: null, status: "failed" };
   }
   const res = await fetch(state.videoUrl, { signal: AbortSignal.timeout(120_000) });
@@ -545,10 +700,17 @@ export async function checkExport(editId: string, exportId: string): Promise<{ e
   const seconds = state.duration ?? source.seconds;
   const title = `${source.title || "Your edit"} · your edit`;
   await deliverOne(admin, row, generationId, { title, summary: "", aspect: source.aspect, seconds, bytes });
+  if (record.chargeRowId) {
+    const credits = record.credits ?? 0;
+    await settleHold(admin, record.chargeRowId, { charge: credits, outcome: "succeeded", detail: `Director's Cut · Export · ${credits} credit${credits === 1 ? "" : "s"}` });
+  }
   await settle(
     { status: "done", resultId: generationId },
     { title, summary: "Your edit on the timeline, rendered.", aspect: source.aspect, seconds, generationId, turn: source.turn, project: source.project ?? null },
   );
+  // What the render cost us, on the edit's record (and outside the session's own figure, advance.ts).
+  const renderUsd = Math.max(1, Math.ceil(seconds / 60)) * EXPORT_USD_PER_MINUTE;
+  await bumpCost(admin, row.id, renderUsd);
   return { error: null, status: "done", generationId };
 }
 
@@ -582,6 +744,18 @@ export async function composeTrack(
   const takes = Math.max(1, Math.min(MAX_TAKES, Math.round(Number(input?.takes) || MAX_TAKES)));
   const req = { engine, prompt, styles, instrumental: input?.instrumental !== false, seconds, sections, takes };
   const admin = createAdminClient();
+  // A fixed price for the takes asked for (pricing.ts composeCredits); the ones that fail come back.
+  const credits = composeCredits(engine, seconds, takes);
+  const hold = await placeHold(await holdDeps(access.userId), {
+    userId: access.userId,
+    rowId: crypto.randomUUID(),
+    credits,
+    modelId: EDITOR_MUSIC_MODEL_ID,
+    prompt: `Music · ${prompt || styles.join(", ")}`,
+    detail: `Director's Cut · music · ${takes} take${takes === 1 ? "" : "s"} · ${credits} credit${credits === 1 ? "" : "s"}`,
+    hidden: true,
+  });
+  if (hold.error !== null) return { error: holdRefusal(hold, credits, "music") };
   const made = await Promise.allSettled(
     Array.from({ length: takes }, async () => {
       const res = await fetch(`https://fal.run/${ENGINES[engine].endpoint}`, {
@@ -610,7 +784,15 @@ export async function composeTrack(
   );
   const done = made.flatMap((m) => (m.status === "fulfilled" ? [m.value] : []));
   for (const m of made) if (m.status === "rejected") console.error(`[editor] compose for ${row.id} failed:`, m.reason instanceof Error ? m.reason.message : m.reason);
-  if (done.length === 0) return { error: "The composer couldn't make music this time. Try again." };
+  if (hold.rowId) {
+    const kept = done.length > 0 ? Math.min(credits, composeCredits(engine, seconds, done.length)) : 0;
+    await settleHold(admin, hold.rowId, {
+      charge: kept,
+      outcome: kept > 0 ? "succeeded" : "failed",
+      detail: `Director's Cut · music · ${done.length} of ${takes} take${takes === 1 ? "" : "s"} made · ${kept} credit${kept === 1 ? "" : "s"}`,
+    }).catch((err: unknown) => console.error(`[editor] compose settle for ${row.id} failed:`, err instanceof Error ? err.message : err));
+  }
+  if (done.length === 0) return { error: "The composer couldn't make music this time. Nothing was charged. Try again." };
   // The takes join the project (Export bundles them) and the edit's record; fal charges each one it made.
   const outputs = row.plan!.outputs.map((o) =>
     o.generationId === generationId && o.project
@@ -622,13 +804,33 @@ export async function composeTrack(
     .from("video_edits")
     .update({
       plan: { ...row.plan!, outputs, takes: [...(row.plan?.takes ?? []), ...done.map((d) => d.take)] },
-      cost_usd: Math.round((Number(row.cost_usd) + spent) * 10000) / 10000,
       updated_at: new Date().toISOString(),
     })
     .eq("id", row.id);
+  await bumpCost(admin, row.id, spent);
   return { error: null, takes: done.map((d) => ({ id: d.take.id, source: d.take.source, engine: d.take.engine, file: d.take.file, seconds: d.take.seconds })) };
 }
 
 function kick(editId: string): void {
   kickEdit(editId);
+}
+
+/**
+ * Our spend outside the editing session (music, a render) onto the edit's
+ * record. The session's own figure is re-read every tick on top of
+ * render.preUsd (advance.ts), so the spend goes there too, or the next tick
+ * would write over it.
+ */
+async function bumpCost(admin: ReturnType<typeof createAdminClient>, editId: string, usd: number): Promise<void> {
+  if (!(usd > 0)) return;
+  const { data } = await admin.from("video_edits").select("cost_usd, render").eq("id", editId).maybeSingle<{ cost_usd: number | null; render: EditRow["render"] }>();
+  if (!data) return;
+  const round = (n: number) => Math.round(n * 10000) / 10000;
+  await admin
+    .from("video_edits")
+    .update({
+      cost_usd: round((Number(data.cost_usd) || 0) + usd),
+      ...(data.render ? { render: { ...data.render, preUsd: round((Number(data.render.preUsd) || 0) + usd) } } : {}),
+    })
+    .eq("id", editId);
 }

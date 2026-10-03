@@ -22,6 +22,7 @@ const NONE: ToolGates = {
   mystiqueVisible: false,
   liveVisible: false,
   cutVisible: false,
+  effectsVisible: false,
   pressTourVisible: false,
 };
 const ALL: ToolGates = {
@@ -30,6 +31,7 @@ const ALL: ToolGates = {
   mystiqueVisible: true,
   liveVisible: true,
   cutVisible: true,
+  effectsVisible: true,
   pressTourVisible: true,
 };
 const root = join(__dirname, "..", "..");
@@ -54,9 +56,12 @@ describe("the sidebar's tools", () => {
     expect(visibleTools({ ...NONE, mystiqueVisible: true }).map((t) => t.key)).toContain("recast");
     expect(visibleTools({ ...NONE, pressTourVisible: true }).map((t) => t.key)).toContain("pressTour");
     expect(visibleTools({ ...ALL, pressTourVisible: false }).map((t) => t.key)).not.toContain("pressTour");
-    // Effects runs on Director's Cut's engine, so it opens and closes with it.
-    expect(visibleTools({ ...NONE, cutVisible: true }).map((t) => t.key)).toEqual(expect.arrayContaining(["cut", "effects"]));
-    expect(visibleTools({ ...ALL, cutVisible: false }).map((t) => t.key)).not.toContain("effects");
+    // Director's Cut opened to paid plans on 2026-10-03; Effects (its engine,
+    // admins only) has its own gate, so opening one never opens the other.
+    expect(visibleTools({ ...NONE, cutVisible: true }).map((t) => t.key)).toContain("cut");
+    expect(visibleTools({ ...NONE, cutVisible: true }).map((t) => t.key)).not.toContain("effects");
+    expect(visibleTools({ ...NONE, effectsVisible: true }).map((t) => t.key)).toContain("effects");
+    expect(visibleTools({ ...ALL, effectsVisible: false }).map((t) => t.key)).not.toContain("effects");
   });
 
   it("knows which tool a page belongs to, without matching a longer neighbour", () => {

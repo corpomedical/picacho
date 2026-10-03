@@ -9,7 +9,9 @@
 import { useMemo, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { composeTrack, type EditDetail } from "@/lib/editor/actions";
-import { composeCostUsd, MAX_TAKES, sectionsFromCuts, type ComposerEngine } from "@/lib/editor/composer";
+import { MAX_TAKES, sectionsFromCuts, type ComposerEngine } from "@/lib/editor/composer";
+import { composeCredits } from "@/lib/editor/pricing";
+import { formatMsg } from "@/lib/i18n/format";
 
 const VIBES = ["Dramatic", "Epic", "Tense", "Dreamy", "Uplifting", "Dark"] as const;
 const SOUNDS = ["Hybrid orchestral", "Synthwave", "Drum and bass", "Piano", "Lo-fi", "Rock"] as const;
@@ -27,6 +29,7 @@ export function ScorePanel({
   onComposed,
   onUse,
   offMusic = [],
+  isAdmin = false,
 }: {
   editId: string;
   generationId: string;
@@ -40,6 +43,8 @@ export function ScorePanel({
   onUse: (take: Take) => void;
   /** Music engines taken off the menu on Admin → Models (the panel keeps at least one). */
   offMusic?: string[];
+  /** Admins are not charged, so no price shows. */
+  isAdmin?: boolean;
 }) {
   const { t } = useLocale();
   const b = t.directorsCut.bay;
@@ -51,8 +56,9 @@ export function ScorePanel({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const sections = useMemo(() => sectionsFromCuts(duration, cuts), [duration, cuts]);
-  const cost = composeCostUsd(engine, duration, MAX_TAKES);
-  const price = cost >= 0.1 ? `$${cost.toFixed(2)}` : `${Math.max(1, Math.round(cost * 100))}¢`;
+  // The customer's price in credits (pricing.ts composeCredits, the server's figure for the same takes).
+  const credits = composeCredits(engine, Math.max(5, duration), MAX_TAKES);
+  const price = isAdmin ? null : credits === 1 ? b.credit : formatMsg(b.credits, { n: credits });
 
   function toggle(v: string) {
     setPicked((cur) => {
@@ -158,7 +164,7 @@ export function ScorePanel({
         disabled={busy || (!prompt.trim() && picked.size === 0)}
         className="h-10 rounded-[10px] bg-[#e0a468] text-[14px] font-semibold text-[#1a0f07] disabled:opacity-50"
       >
-        {busy ? s.composing : `${s.compose.replace("{n}", String(MAX_TAKES))} · ${price}`}
+        {busy ? s.composing : `${s.compose.replace("{n}", String(MAX_TAKES))}${price ? ` · ${price}` : ""}`}
       </button>
       {problem && <p className="text-[12px] text-[#f0a3a3]">{problem}</p>}
 

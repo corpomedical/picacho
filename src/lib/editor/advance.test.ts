@@ -76,8 +76,10 @@ function fakeAdmin() {
     };
     return api;
   }
+  const rpcs: [string, unknown][] = [];
   const admin = {
     from: (table: string) => query(table),
+    rpc: async (fn: string, args: unknown) => (rpcs.push([fn, args]), { data: null, error: null }),
     storage: {
       from: (bucket: string) => ({
         createSignedUrl: async (path: string) => ({ data: { signedUrl: `https://store/${bucket}/${path}?sig` }, error: null }),
@@ -86,7 +88,7 @@ function fakeAdmin() {
       }),
     },
   };
-  return { admin: admin as never, tables, files };
+  return { admin: admin as never, tables, files, rpcs };
 }
 
 const clip = (i: number, type = "video/mp4") => ({
@@ -222,6 +224,106 @@ describe("advanceEdit v2", () => {
     Object.assign(tables.video_edits[0], { stage: "directing", plan: edit().plan, render: session() });
     expect(await advanceEdit(edit().id, { admin, now: () => 100_000 })).toBe("done");
     expect(tables.generations).toHaveLength(2);
+  });
+
+  // Credits (operator, 2026-10-03: "Pay what it uses"): the cut's hold is its first video's row.
+  const HOLD = "22222222-2222-4222-8222-222222222222";
+  const heard = (over: Partial<EditRow> = {}) =>
+    edit({
+      stage: "directing",
+      render: session(),
+      clips: [
+        { ...clip(0), probe: { duration: 30, hasVideo: true, hasAudio: true, width: 1920, height: 1080, fps: 24 }, speech: "no-speech", analyzed: true },
+        { ...clip(1, "audio/mpeg"), probe: { duration: 60, hasVideo: false, hasAudio: true, width: 0, height: 0, fps: 0 }, speech: "no-speech", analyzed: true },
+      ],
+      plan: { outputs: [], history: [{ role: "you", text: "Make shorts" }], holds: [{ turn: 1, rowId: HOLD, credits: 17, bytes: 20 }] },
+      ...over,
+    });
+  const holdRow = () => ({
+    id: HOLD,
+    user_id: "u1",
+    status: "generating",
+    model_id: "video-editor",
+    credits_used: 17,
+    purchased_credits_used: 5,
+    bonus_credits_used: 0,
+    result_url: null,
+    deleted_at: "2026-10-03T10:00:00Z",
+  });
+
+  it("a delivered cut keeps what Opus used and gives the rest of its hold back", async () => {
+    const { admin, tables, rpcs } = fakeAdmin();
+    tables.video_edits.push(heard() as never);
+    tables.generations.push(holdRow());
+    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "end_turn", activity: null, errorType: null, idleAt: 90_000, costUsd: 2.26, latest: "Done." });
+    vi.mocked(collectDelivery).mockResolvedValue({
+      resultId: "file_r1",
+      notes: "",
+      outputs: [
+        { file: "a.mp4", title: "Hook A", summary: "Opens on the explosion.", aspect: "9:16", seconds: 18.4, bytes: new Uint8Array([1]), project: null },
+        { file: "b.mp4", title: "Hook B", summary: "Opens on the face.", aspect: "9:16", seconds: 21, bytes: new Uint8Array([2]), project: null },
+      ],
+    });
+    expect(await advanceEdit(edit().id, { admin, now: () => 100_000 })).toBe("done");
+    // $2.26 of Opus + listening 2 × (30 s + 60 s) at $0.006/min = $2.278 → 9 credits at $0.28.
+    expect(tables.generations[0]).toMatchObject({ id: HOLD, status: "succeeded", deleted_at: null, credits_used: 9, purchased_credits_used: 0, video_aspect_ratio: "9:16" });
+    expect(String(tables.generations[0].result_url)).toContain(`u1/${HOLD}.mp4`);
+    // The 8 back: the 5 bought first, the other 3 off the month (credits_used fell to 9).
+    expect(rpcs).toEqual([["add_purchased_credits", { p_user_id: "u1", p_amount: 5 }]]);
+    // The second video is its own, free row.
+    expect(tables.generations[1]).toMatchObject({ id: derivedUuid(`video-edit:${edit().id}:1:1`), credits_used: 0, status: "succeeded" });
+    const row = tables.video_edits[0] as unknown as EditRow;
+    expect(row.generation_id).toBe(HOLD);
+    expect(row.plan?.holds).toEqual([{ turn: 1, rowId: HOLD, credits: 17, bytes: 20, charged: 9, refunded: 8 }]);
+
+    // A tick that dies after settling and runs again settles nothing twice.
+    Object.assign(tables.video_edits[0], { stage: "directing", plan: heard().plan, render: session() });
+    expect(await advanceEdit(edit().id, { admin, now: () => 100_000 })).toBe("done");
+    expect(rpcs).toHaveLength(1);
+    expect(tables.generations[0]).toMatchObject({ credits_used: 9 });
+  });
+
+  it("a cut that delivers no video gives its whole hold back", async () => {
+    const { admin, tables, rpcs } = fakeAdmin();
+    tables.video_edits.push(heard() as never);
+    tables.generations.push(holdRow());
+    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "budget_reached", activity: null, errorType: null, idleAt: 90_000, costUsd: 4.1, latest: null });
+    expect(await advanceEdit(edit().id, { admin, now: () => 100_000 })).toBe("failed");
+    expect(tables.generations[0]).toMatchObject({ status: "failed", credits_used: 0, purchased_credits_used: 0 });
+    expect(rpcs).toEqual([["add_purchased_credits", { p_user_id: "u1", p_amount: 5 }]]);
+    const row = tables.video_edits[0] as unknown as EditRow;
+    expect(row.stage).toBe("failed");
+    expect(row.plan?.holds?.[0]).toMatchObject({ charged: 0, refunded: 17 });
+  });
+
+  it("a change is charged only what Opus used since it was asked for", async () => {
+    const { admin, tables, rpcs } = fakeAdmin();
+    const HOLD2 = "33333333-3333-4333-8333-333333333333";
+    tables.video_edits.push(
+      heard({
+        render: session({ turn: 2, turnStartedAt: 50_000, turnStartUsd: 2.3, lastResultId: "file_r1" }),
+        plan: {
+          outputs: [],
+          history: [],
+          holds: [
+            { turn: 1, rowId: HOLD, credits: 17, bytes: 20, charged: 9, refunded: 8 },
+            { turn: 2, rowId: HOLD2, credits: 10, bytes: 20 },
+          ],
+        },
+      }) as never,
+    );
+    tables.generations.push({ ...holdRow(), id: HOLD2, credits_used: 10, purchased_credits_used: 0 });
+    vi.mocked(readSession).mockResolvedValue({ status: "idle", stopReason: "end_turn", activity: null, errorType: null, idleAt: 90_000, costUsd: 3.2, latest: "Done." });
+    vi.mocked(collectDelivery).mockResolvedValue({
+      resultId: "file_r2",
+      notes: "",
+      outputs: [{ file: "a2.mp4", title: "Hook A", summary: "Shorter.", aspect: "9:16", seconds: 15, bytes: new Uint8Array([1]), project: null }],
+    });
+    expect(await advanceEdit(edit().id, { admin, now: () => 100_000 })).toBe("done");
+    // $3.20 − $2.30 = $0.90 of Opus, no listening on a change → 4 credits; 6 back off the month.
+    expect(tables.generations[0]).toMatchObject({ id: HOLD2, status: "succeeded", credits_used: 4 });
+    expect(rpcs).toEqual([]);
+    expect((tables.video_edits[0] as unknown as EditRow).plan?.holds?.[1]).toMatchObject({ charged: 4, refunded: 6 });
   });
 
   it("waits while an idle from BEFORE the change request is all the session shows", async () => {

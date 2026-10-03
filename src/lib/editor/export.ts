@@ -17,6 +17,10 @@ export type ExportRecord = {
   error?: string | null;
   /** The finished video's generation id. */
   resultId?: string | null;
+  /** The generations row holding its credits (charge.ts); null for an admin. Refunded when the render fails. */
+  chargeRowId?: string | null;
+  /** What it held, in credits. */
+  credits?: number;
 };
 
 /** Project files a render has no use for: the pages we replace and the agent's own notes. */

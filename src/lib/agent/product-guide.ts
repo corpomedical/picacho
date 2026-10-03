@@ -7,6 +7,7 @@ import { TEMPLATES } from "../templates";
 import { UPSCALE_TIERS, upscaleCreditCost } from "../generations/upscale";
 import { LAYERS_TIERS, LAYERS_TIER_ORDER } from "../generations/layers";
 import { LIVE_LENGTHS, liveCreditsFor } from "../live/live";
+import { changeHold, composeCredits, cutHold, exportCredits, typicalCut } from "../editor/pricing";
 import { ASSISTANT_TOPUPS } from "./topups";
 
 // The assistant's product guide (operator ask, 2026-09-02: "needs to know
@@ -178,15 +179,21 @@ LAYERS (/app/layers, "Tools" → Layers; any signed-in account with credits).
 LIVE (/app/live).
 - A take that streams while the person keeps directing it in typed lines. Admins can open it; paid plans once the team opens it to them (until then a paid account sees that it's part of the paid plans). It starts from a character's photo, a Helios still ("Direct it live" on a finished still) or words alone. Length is bought up front: ${LIVE_LENGTHS.map((s) => `${s} s for ${liveCreditsFor(s)} credits`).join(", ")}; quality 768p or 480p; shape 16:9, 9:16 or 1:1. "Go live · N credits" charges the length; typed directions (up to 300 characters) are applied live. "Stop" ends it early and the unused seconds come back as credits automatically. The browser's recording of the stream is what's kept in Media.
 
+DIRECTOR'S CUT (/app/edit) — the video editor.
+- Raw footage in, a finished edit out: they add clips (MP4, MOV or WebM, up to 12 files and 20 minutes, a song too if they want it cut to the beat), say what they want, pick a shape and a length or leave it to Opus, and press "Cut it". Opus 5.5 makes the whole video — the cut, the sound, the titles and captions — usually in 15–30 minutes; they can leave the page. The video lands in History and opens on a multi-track timeline (Edit · Score · Deliver) where they can trim, split, move and mute; "Ask for a change" (with a new song if they like) makes Cut 2, Cut 3 and so on in the same edit.
+- Every paid plan; an account without one sees that it's part of the paid plans.
+- Price, pay-what-it-uses (like Live): "Cut it" holds up to ${cutHold(0)} credits and a change up to ${changeHold(0)} (a little more for very large footage); when Opus is done they pay what it used — most first cuts come to ${typicalCut().low}–${typicalCut().high} credits — and the rest comes back on its own. No video, nothing charged. The notes under the cut say what each cut held and used.
+- Score: "Compose 3 takes" writes music timed to the cut — ${composeCredits("eleven", 60, 3)} credits for three ElevenLabs takes of up to a minute, ${composeCredits("ace", 60, 3)} for quick ACE-Step drafts; takes that fail are not charged. Deliver: "Export" renders the timeline into a new video in History for ${exportCredits(60)} credit (up to two minutes), free if the render fails.
+
 NOT OPEN TO CUSTOMERS YET — the team is still testing these; say they're coming, and offer nothing from them:
-- RECAST (a saved character performs any video clip), THE VIDEO EDITOR (Director's Cut: raw footage in, a finished edit out, with a timeline and an original score), and RECCE (filmed footage read into a walkable Helios 3D set). Press Tour is covered above.
+- RECAST (a saved character performs any video clip), EFFECTS (effects in a video, one-tap photo effects, titles and credits), and RECCE (filmed footage read into a walkable Helios 3D set). Press Tour is covered above.
 
 THE API (for developers, Elite; any other account only if the team switches it on).
 - Documented at picacho.ai/docs/api. Keys are made in Settings → Security → "API keys" ("Create key" shows the key once — copy it then; a lost key can only be revoked and replaced). Four endpoints: list characters, make one image (1 credit, usually 20-60 seconds, with its identity score and the prompt that actually ran), fetch a result, read usage. Video isn't in the API yet. The same thing is an MCP server (picacho.ai/api/mcp, the same key) for assistants like Claude or Cursor.
 
 ACCOUNT AND BILLING DETAILS.
 - Two different dates: plan credits and the month's other allowances refill on the billing month's anniversary (Settings shows "Back to N on {date}" once they run out); the plan itself is charged on its renewal date, which for an annual plan is a year out.
-- Credits used this month and what on: Settings → Plan & billing breaks the month's spend down by videos, images, Helios 3D, upscales, Layers and Recast, largest first.
+- Credits used this month and what on: Settings → Plan & billing breaks the month's spend down by videos, images, Helios 3D, upscales, Layers, Recast and Director's Cut, largest first.
 - Change or cancel a website plan: "Change or cancel" on Plan & billing opens Stripe's secure page (switch plan, cancel, card, the name and address on invoices). A plan bought in the Android app is changed or cancelled in Google Play.
 - Invite link: every account with a username has picacho.ai/r/{username} (Profile tab, "Copy link"); when someone signs up through it and makes their first render, both accounts get 1 extra credit that never expires.
 - Promo codes: entered at checkout on picacho.ai with "Add promotion code". Purchases in the Android app have no code field.

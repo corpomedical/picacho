@@ -684,6 +684,7 @@ export function AppSidebar({
   mystiqueVisible = false,
   liveVisible = false,
   cutVisible = false,
+  effectsVisible = false,
   pressTourVisible = false,
   alyChat = null,
 }: {
@@ -702,8 +703,10 @@ export function AppSidebar({
   mystiqueVisible?: boolean;
   /** Live (H3 Max Director) — every paid plan, behind the live flag. */
   liveVisible?: boolean;
-  /** Director's Cut (the video editor) — admins only, behind the video_editor flag. */
+  /** Director's Cut (the video editor) — admins, and every plan's menu once video_editor_paid_plans is on. */
   cutVisible?: boolean;
+  /** Effects — admins only, behind the video_editor flag. */
+  effectsVisible?: boolean;
   /** Press Tour (ads for your product) — admins only, behind the press_tour flag. */
   pressTourVisible?: boolean;
   /** Aly's chat page (every plan, behind the aly_chat flag): what the person calls her. */
@@ -715,7 +718,7 @@ export function AppSidebar({
   const { t, locale } = useLocale();
   const s = t.settings;
   // The tools this account may open, behind the one Tools row.
-  const tools = visibleTools({ setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible, pressTourVisible });
+  const tools = visibleTools({ setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible, effectsVisible, pressTourVisible });
   // The keys this account can see, as one string: the pins below are re-read
   // when it changes, so a default pin (DEFAULT_PINNED) is seeded only where
   // its tool is shown.

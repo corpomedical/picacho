@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { activityOf, collectDelivery, editorApiKey, isBillingError, parseResult, readSession, sendChange, startSession } from "./agent";
+import { activityOf, collectDelivery, editorApiKey, isBillingError, parseResult, raiseBudget, readSession, sendChange, startSession } from "./agent";
 import { AGENT_SKILLS, AGENT_SYSTEM, changeMessage, jobMessage, PROJECT_RULES } from "./agent-prompt";
 
 /** Just the Managed Agents calls agent.ts makes, recorded. */
@@ -22,6 +22,7 @@ function fakeClient(opts: {
       sessions: {
         create: vi.fn(async (p: unknown) => (calls.create.push(p), { id: "sesn_1", status: "running" })),
         retrieve: vi.fn(async () => opts.session ?? { status: "running", usage: { list_cost: { amount: "37" } } }),
+        update: vi.fn(async (_id: string, p: unknown) => (calls.update = [...(calls.update ?? []), p], {})),
         events: {
           list: vi.fn(async () => ({ data: opts.events ?? [] })),
           send: vi.fn(async (_id: string, p: unknown) => (calls.send.push(p), {})),
@@ -115,12 +116,20 @@ describe("agent.ts", () => {
       agent: "agent_1",
       environment_id: "env_1",
       metadata: { edit_id: "e1" },
-      budget: { type: "limit", max_list_cost: { amount: "600", currency: "USD" } },
+      // The first cut's hard limit is the price list's (pricing.ts CUT_BUDGET_USD): what "Cut it" holds is built on it.
+      budget: { type: "limit", max_list_cost: { amount: "400", currency: "USD" } },
       resources: [{ type: "file", file_id: "file_1", mount_path: "/workspace/job/clip-0.transcript.json" }],
     });
     const text = JSON.stringify(create.initial_events);
     expect(text).toContain("transcript: /workspace/job/clip-0.transcript.json");
     expect(text).toContain("about 20 s per video");
+  });
+
+  it("gives a change its own hard limit: what the session spent plus the change's budget", async () => {
+    const { client, calls } = fakeClient({ session: { status: "idle", usage: { list_cost: { amount: "263" } } } });
+    const spent = await raiseBudget("sesn_1", client);
+    expect(spent).toBe(2.63);
+    expect(calls.update).toEqual([{ budget: { type: "limit", max_list_cost: { amount: "463", currency: "USD" } } }]);
   });
 
   it("starts an Effects job with the finishing recipe, not the editing brief", async () => {

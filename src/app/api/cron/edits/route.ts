@@ -3,6 +3,7 @@ import { alertEditorOutOfCredit, withJobAlert } from "@/lib/push/admin-alerts";
 import { createAdminClient } from "@/lib/supabase/server";
 import { advanceEdit } from "@/lib/editor/advance";
 import { isEditorEnabled } from "@/lib/editor/enabled";
+import { settleForgottenHolds } from "@/lib/editor/charge";
 
 // The video editor's clock (2026-09-24), every minute: each edit still
 // working gets one tick (lib/editor/advance.ts) — a clip analysed, one
@@ -27,7 +28,14 @@ async function run(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const admin = createAdminClient();
-  if (!(await isEditorEnabled(admin))) return NextResponse.json({ ok: true, skipped: "off" });
+  // Credits held by a cut, a change, music or an export that nothing settled
+  // (a function that died in between) come back whole — even while the
+  // editor is switched off (charge.ts settleForgottenHolds).
+  const released = await settleForgottenHolds(admin).catch((err: unknown) => {
+    console.error("[editor] backstop failed:", err instanceof Error ? err.message : err);
+    return 0;
+  });
+  if (!(await isEditorEnabled(admin))) return NextResponse.json({ ok: true, skipped: "off", released });
 
   const { data, error } = await admin
     .from("video_edits")

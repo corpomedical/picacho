@@ -39,6 +39,7 @@ import { parseDialogueCue } from "@/lib/generations/dialogue-cue";
 import { mediaUrl } from "@/lib/media/url";
 import { LIVE_MODEL_ID } from "@/lib/live/live";
 import { sweepLiveTakes } from "@/lib/live/store";
+import { EDITOR_CHARGE_MODEL_IDS } from "@/lib/editor/charge";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { IDENTITY_MAX_REFERENCES } from "@/lib/generations/identity-prompt";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
@@ -3171,6 +3172,10 @@ export async function reapStaleJobs(userId: string): Promise<void> {
       if (withJob.has(gen.id as string)) continue;
       // Live rows are sweepLiveTakes' alone (above), meter or not.
       if (gen.model_id === LIVE_MODEL_ID) continue;
+      // Director's Cut's holds (editor/charge.ts) run longer than this
+      // window by design — a cut can take 75 minutes — and are settled by
+      // the edit itself, with the editor cron's backstop behind it.
+      if (EDITOR_CHARGE_MODEL_IDS.includes(gen.model_id as string)) continue;
       try {
         // finish() gives the standard failure bookkeeping — the
         // status-guarded terminal write, the flag-gated refund, the push

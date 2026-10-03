@@ -13,12 +13,11 @@
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { changeMessage, jobMessage, type ChangeExtras } from "./agent-prompt";
 import { effectsMessage } from "./effects-prompt";
+import { CHANGE_BUDGET_CENTS, CUT_BUDGET_CENTS } from "./pricing";
 import type { EffectsSpec } from "./effects";
 import type { Word } from "./transcribe";
 
 const BETAS = ["managed-agents-2026-04-01"] as const;
-/** Hard cap per session at list prices, in US cents (the platform's own budget, pre-request gate). */
-export const DEFAULT_BUDGET_CENTS = 600;
 
 export type JobClip = {
   index: number;
@@ -116,9 +115,13 @@ function editorClient(): Anthropic {
   return new Anthropic({ apiKey: editorApiKey() });
 }
 
+// The session's hard budget at list prices, in US cents (the platform's own
+// pre-request gate): CUT_BUDGET_CENTS for the first cut, and each change
+// raises it to what was spent plus CHANGE_BUDGET_CENTS (raiseBudget). It is
+// what a cut or a change holds in credits (pricing.ts), so it is not an
+// environment setting: the price follows from it.
 function budgetCents(): string {
-  const n = Number(process.env.DIRECTORS_CUT_BUDGET_CENTS);
-  return String(Number.isInteger(n) && n > 0 ? n : DEFAULT_BUDGET_CENTS);
+  return String(CUT_BUDGET_CENTS);
 }
 
 /** Start the edit: transcripts mounted as files, footage fetched by the agent from signed URLs. */
@@ -290,6 +293,20 @@ export function parseResult(
     }));
   if (outputs.length === 0) return null;
   return { outputs, notes: typeof b.notes === "string" ? b.notes.slice(0, 1000) : "" };
+}
+
+/**
+ * Before a change is sent: the session may spend CHANGE_BUDGET_CENTS more
+ * than it has so far — the change's own hard limit. Returns the session's
+ * list cost at that moment (US dollars), from which the change is charged.
+ */
+export async function raiseBudget(sessionId: string, client: Anthropic = editorClient()): Promise<number> {
+  const session = await client.beta.sessions.retrieve(sessionId);
+  const spentCents = Math.max(0, Math.ceil(Number(session.usage?.list_cost?.amount ?? 0)) || 0);
+  await client.beta.sessions.update(sessionId, {
+    budget: { type: "limit", max_list_cost: { amount: String(spentCents + CHANGE_BUDGET_CENTS), currency: "USD" } },
+  });
+  return spentCents / 100;
 }
 
 export async function sendChange(sessionId: string, note: string, extras: ChangeExtras = {}, client: Anthropic = editorClient()): Promise<void> {

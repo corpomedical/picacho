@@ -65,6 +65,12 @@ export type SessionRecord = {
   latest: string | null;
   /** What it is doing right now (agent.ts activityOf), when its words are older than its actions. */
   activity?: string | null;
+  /**
+   * The session's own list cost when the current turn was asked for, US
+   * dollars — a change is charged what Opus used since (charge.ts). 0, or
+   * missing, for the first cut.
+   */
+  turnStartUsd?: number;
 };
 
 /** `song`: the file name of a song sent with that change. */
@@ -83,7 +89,15 @@ export type ComposerTake = { id: string; source: string; engine: "eleven" | "ace
  * `exports`: timeline edits sent to be rendered (export.ts), newest last;
  * `takes`: music the composer wrote for a video.
  */
-export type DeliveryRecord = { outputs: Output[]; history: Note[]; exports?: ExportRecord[]; takes?: ComposerTake[] };
+export type DeliveryRecord = { outputs: Output[]; history: Note[]; exports?: ExportRecord[]; takes?: ComposerTake[]; holds?: HoldRecord[] };
+
+/**
+ * The credits a cut (turn 1) or a change (turn 2+) held, and what it came to
+ * once the turn ended (charge.ts). `rowId` is the generations row holding
+ * them — the first video that turn delivers; null for an admin, who is not
+ * charged. `bytes`: the footage (and songs) the turn downloads.
+ */
+export type HoldRecord = { turn: number; rowId: string | null; credits: number; bytes: number; charged?: number | null; refunded?: number | null };
 
 export type EditRow = {
   id: string;

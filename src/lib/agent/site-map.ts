@@ -28,6 +28,7 @@ export type PageGate =
   | "mystiqueVisible"
   | "liveVisible"
   | "cutVisible"
+  | "effectsVisible"
   | "pressTourVisible";
 
 export type PageOption = { value: string; name: string; what: string };
@@ -136,7 +137,7 @@ export const SITE_PAGES: readonly SitePage[] = [
     area: "app",
     path: "/app/effects",
     name: "Effects",
-    gate: "cutVisible",
+    gate: "effectsVisible",
     what: "effects put into a video, one-tap effects on a photo, titles and credits for a film.",
     param: {
       key: "tab",
@@ -217,7 +218,8 @@ const GATE_WORDS: Record<PageGate, string> = {
   recceVisible: " [not open to customers yet]",
   mystiqueVisible: " [not open to customers yet]",
   liveVisible: " [when Live is open to them]",
-  cutVisible: " [not open to customers yet]",
+  cutVisible: " [paid plans; a cut or a change holds credits and charges what Opus used]",
+  effectsVisible: " [not open to customers yet]",
   pressTourVisible: " [not open to customers yet]",
 };
 

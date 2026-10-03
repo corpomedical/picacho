@@ -55,6 +55,7 @@ describe("open_page and read_screen", () => {
       mystiqueVisible: false,
       liveVisible: false,
       cutVisible: false,
+      effectsVisible: false,
       pressTourVisible: false,
     },
   };

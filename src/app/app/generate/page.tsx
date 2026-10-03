@@ -10,7 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
 import { isNativeApp } from "@/lib/native/server";
-import { isEditorEnabled } from "@/lib/editor/enabled";
+import { isEditorEnabled, isEditorOpenToPlans } from "@/lib/editor/enabled";
 import { isPressTourEnabled } from "@/lib/press-tour/enabled";
 import { allowExternalPurchaseLink } from "@/lib/native/external-purchase";
 import { AccountMenuButton } from "@/components/account-menu/account-menu";
@@ -109,8 +109,10 @@ export default async function GeneratePage() {
     freeGenerationLastAt,
     isAdmin,
   } = workspaceData;
-  // Director's Cut in the "+" menu: admins, behind its switch (the sidebar's rule).
-  const directorsCutOn = isAdmin && (await isEditorEnabled(supabase));
+  // Director's Cut in the "+" menu: the sidebar's rule (lib/nav/gates.ts) —
+  // admins, and everyone once video_editor_paid_plans is on (an account
+  // without a paid plan finds the page that says how to get one).
+  const directorsCutOn = (isAdmin || (await isEditorOpenToPlans(supabase))) && (await isEditorEnabled(supabase));
   // Press Tour: the same rule as its door and its sidebar row (app/layout.tsx).
   const pressTourOn = isAdmin && (await isPressTourEnabled(supabase));
 

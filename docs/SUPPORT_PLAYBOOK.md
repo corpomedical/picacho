@@ -122,6 +122,9 @@ These run with nobody watching.
 
 It fixes itself (§2): 45 minutes after it stopped moving, the next reaper pass writes it off. That's at most about two hours, sooner if the person opens Generate or History. The render then reads "This render didn't finish in time and was stopped." and its credits come back by the rules in §2. If one is stuck longer than 3 hours, the reconcile job is failing: §3.6.
 
+### 3.5b "Director's Cut took my credits"
+A cut holds up to 17 credits (a change up to 10) while Opus works, then keeps only what Opus used (most first cuts come to 8–11) and gives the rest back on its own. An edit that delivers no video gives everything back. Under the cut, the notes say "Cut 1 · 9 credits used, 8 back" (or "holding up to 17" while it works). If the line still says "holding" hours later, the editor's cron gives the whole hold back within three hours. Music and Export are fixed prices (shown on their buttons), and a take or render that fails is free. Admins are never charged.
+
 ### 3.6 Alert: "Scheduled job failed: <job>"
 
 The six jobs (`vercel.json`):
@@ -239,7 +242,8 @@ An emergency is when many customers are affected, money is going wrong, or secur
 | `live` | Picacho Live off |
 | `producer` / `producer_elite` | Aly off (and any name a person gave her) |
 | `chat_agent` | The in-app assistant off |
-| `video_editor` | Director's Cut off |
+| `video_editor` | Director's Cut off (and Effects) for everyone, admins included |
+| `video_editor_paid_plans` | Director's Cut closed to customers; admins keep it. Edits already running finish and settle their credits |
 | `astra_sets` (+ `astra_photo_sets`, `astra_previz`, `astra_recce`) | Helios 3D off |
 | `face_verification`, `opening_frame`, `video_face_refund` | The face-lock features off |
 | `brand_rules_enforcement` | Customers' brand rules are ignored. Don't switch this off in an emergency. |

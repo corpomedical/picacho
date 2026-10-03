@@ -11,6 +11,9 @@ describe("where the credits went", () => {
     expect(spendKind({ id: "l", content_type: "image", model_id: "seedream-layerize", credits_used: 1 }, helios)).toBe("layers");
     expect(spendKind({ id: "m", content_type: "video", model_id: "recast-kling-edit", credits_used: 8 }, helios)).toBe("mystique");
     expect(spendKind({ id: "v", content_type: "video", model_id: "kling-o3-pro", credits_used: 3 }, helios)).toBe("videos");
+    for (const model of ["video-editor", "video-editor-music", "video-editor-export"]) {
+      expect(spendKind({ id: "e", content_type: "video", model_id: model, credits_used: 9 }, helios)).toBe("editor");
+    }
     expect(spendKind({ id: "i", content_type: "image", model_id: "gpt-image", credits_used: 1 }, helios)).toBe("images");
   });
 

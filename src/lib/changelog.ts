@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.222.0",
+    build: 261,
+    date: "2026-10-03",
+    title: "Director's Cut opens to every paid plan, priced on what it uses",
+    items: [
+      "Director's Cut is open to every paid plan (Basic to Elite, payments in good standing), behind its own new switch, video_editor_paid_plans. Someone without a paid plan finds it in the menu and gets a page saying it's part of every paid plan, with See plans. Before, everyone but admins got a \"not found\" page, including people arriving from the ad.",
+      "Pay what it uses, like Live. Cut it holds up to 17 credits, and Opus has a hard $4 limit on a cut. When it's done you pay what it used and the rest comes back on its own. The three real cuts so far would have come to 8, 9 and 11. A change holds up to 10, with a $2 limit each. No video means nothing is charged. The notes under the cut say \"Cut 1 · 9 credits used, 8 back\".",
+      "Score's Compose button shows credits instead of our own dollar cost: 7 for three ElevenLabs takes of up to a minute, 1 for ACE-Step drafts. A take that fails isn't charged. Export costs 1 credit (2 past two minutes), shown on the button and under Deliver, and is free if the render fails.",
+      "Why it can't lose money: one credit carries at most $0.28 of our cost (the rule every tool uses, at least 32% kept on every plan), and the hold always covers Opus's limit, the request still running when it stops, and the footage's download. After three failed edits in one day, new ones wait until the next day. Held credits that nothing settled within three hours come back whole.",
+      "Effects stays admins-only. It has its own switch now in the sidebar, the phone's lamp, History's Keep going doors and Aly's map. Before, opening Director's Cut would have opened Effects too.",
+      "Aly knows Director's Cut: what it does, who has it and what it costs (her guide reads the prices from the same list). She no longer says it's coming soon.",
+      "Fixed on the way: a change's new video used to drop the music takes and exports from the edit's record. Music and render costs now stay in the edit's own cost figure.",
+      "Needs supabase/pending/directors-cut-plans.sql (one switch, on). Until it runs, Director's Cut stays admins-only.",
+    ],
+  },
+  {
     version: "1.221.0",
     build: 260,
     date: "2026-10-03",

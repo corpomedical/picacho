@@ -106,7 +106,7 @@ describe("the Press Tour door", () => {
     expect(layout).toContain("pressTourOn={pressTourVisible}");
     expect(tabBar).toContain('type Choice = "video" | "recast" | "pressTour" | "live" | "cut" | "effects";');
     expect(tabBar).toContain("pressTour: PRESS_TOUR_HREF,");
-    expect(tabBar).toContain("const hasChoices = recastOn || pressTourOn || liveOn || cutOn;");
+    expect(tabBar).toContain("const hasChoices = recastOn || pressTourOn || liveOn || cutOn || effectsOn;");
     expect(tabBar).toContain('onClick={() => choose("pressTour")}');
     // Third, after Recast and before Live (lamp-phone artboard).
     const recast = tabBar.indexOf('onClick={() => choose("recast")}');

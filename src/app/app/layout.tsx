@@ -178,7 +178,7 @@ async function AppChrome({ userId, email }: { userId: string; email: string }) {
   const tm = serverTimer("chrome");
   const supabase = await createClient();
   const c = await loadChrome(supabase, userId, tm);
-  const { setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible, pressTourVisible } = c.gates;
+  const { setsVisible, recceVisible, mystiqueVisible, liveVisible, cutVisible, effectsVisible, pressTourVisible } = c.gates;
   return (
     <>
       {/* data-app-chrome: the sidebar and the tab bar step out of the way (display: none, studio-opening.tsx)
@@ -197,6 +197,7 @@ async function AppChrome({ userId, email }: { userId: string; email: string }) {
           mystiqueVisible={mystiqueVisible}
           liveVisible={liveVisible}
           cutVisible={cutVisible}
+          effectsVisible={effectsVisible}
           pressTourVisible={pressTourVisible}
           alyChat={c.alyChat}
         />
@@ -205,7 +206,7 @@ async function AppChrome({ userId, email }: { userId: string; email: string }) {
           to the accounts that can open them: the same gates as the sidebar's
           entries. */}
       <div data-app-chrome className="contents">
-        <NativeTabBar recastOn={mystiqueVisible} pressTourOn={pressTourVisible} liveOn={liveVisible} cutOn={cutVisible} />
+        <NativeTabBar recastOn={mystiqueVisible} pressTourOn={pressTourVisible} liveOn={liveVisible} cutOn={cutVisible} effectsOn={effectsVisible} />
         <NativeQuickPill shareUrl={c.profile?.username ? `https://picacho.ai/r/${c.profile.username}` : undefined} />
       </div>
       {c.showRatePrompt && <RatePrompt />}

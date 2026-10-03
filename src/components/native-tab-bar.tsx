@@ -233,13 +233,16 @@ export function NativeTabBar({
   pressTourOn = false,
   liveOn = false,
   cutOn = false,
+  effectsOn = false,
 }: {
   recastOn?: boolean;
   pressTourOn?: boolean;
   liveOn?: boolean;
   cutOn?: boolean;
+  /** Effects: admins only (lib/nav/gates.ts), under Director's Cut's switch. */
+  effectsOn?: boolean;
 }) {
-  const hasChoices = recastOn || pressTourOn || liveOn || cutOn;
+  const hasChoices = recastOn || pressTourOn || liveOn || cutOn || effectsOn;
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useLocale();
@@ -507,8 +510,8 @@ export function NativeTabBar({
                   </span>
                 </button>
               )}
-              {/* Effects rides Director's Cut's engine and its gate (lib/nav/tools.ts). */}
-              {cutOn && (
+              {/* Effects rides Director's Cut's engine; admins only (lib/nav/tools.ts). */}
+              {effectsOn && (
                 <button
                   type="button"
                   role="menuitem"

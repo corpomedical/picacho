@@ -106,6 +106,7 @@ describe("pageRefusal", () => {
       mystiqueVisible: false,
       liveVisible: false,
       cutVisible: false,
+      effectsVisible: false,
       pressTourVisible: false,
     },
   };

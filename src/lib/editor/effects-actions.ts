@@ -19,7 +19,7 @@ import { rateLimited } from "@/lib/rate-limit";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
 import { mediaStoragePath, thumbUrl, toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { providerDownloadUrl } from "@/lib/generations/providers/provider-url";
-import { EDITOR_NOT_OPEN, EDITOR_UNAVAILABLE, editorAllowed, isEditorEnabled } from "./enabled";
+import { EDITOR_NOT_OPEN, EDITOR_UNAVAILABLE, effectsAllowed, isEditorEnabled } from "./enabled";
 import { getEdit, type EditDetail } from "./actions";
 import { kickEdit } from "./kick";
 import { EDITOR_BUCKET, planUploads, type ClipRecord, type EditRow, type FileOffer } from "./job";
@@ -44,7 +44,7 @@ async function effectsAccess(): Promise<Access> {
   const { data } = await supabase.auth.getUser();
   if (!data.user) return { error: SESSION_EXPIRED_MESSAGE };
   const { data: profile } = await supabase.from("profiles").select("role, status").eq("id", data.user.id).maybeSingle();
-  if (!editorAllowed(profile)) return { error: EDITOR_NOT_OPEN };
+  if (!effectsAllowed(profile)) return { error: EDITOR_NOT_OPEN };
   if (!(await isEditorEnabled(supabase))) return { error: EDITOR_UNAVAILABLE };
   return { error: null, userId: data.user.id };
 }

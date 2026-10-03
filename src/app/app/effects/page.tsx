@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getModelControls } from "@/lib/models/controls";
-import { editorAllowed, isEditorEnabled } from "@/lib/editor/enabled";
+import { effectsAllowed, isEditorEnabled } from "@/lib/editor/enabled";
 import { libraryVideos, listEffects, takeAsLibraryVideo } from "@/lib/editor/effects-actions";
 import { EffectsDoor } from "@/components/effects/effects-door";
 
@@ -25,7 +25,7 @@ export default async function EffectsPage({ searchParams }: { searchParams: Prom
   if (!userData.user) redirect("/login");
 
   const { data: profile } = await supabase.from("profiles").select("role, status").eq("id", userData.user.id).maybeSingle();
-  if (!editorAllowed(profile)) notFound();
+  if (!effectsAllowed(profile)) notFound();
   if (!(await isEditorEnabled(supabase))) notFound();
 
   const { take, tab } = await searchParams;

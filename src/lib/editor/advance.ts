@@ -8,9 +8,12 @@
 // → start ONE Managed Agent session that makes the whole video → watch it →
 // deliver whatever it finished into History. Every step is resumable from the
 // row alone; a lock left by a dead function goes stale (LOCK_STALE_MS); a step
-// that fails MAX_ATTEMPTS times in a row fails the edit. Nothing is charged
-// to the customer while the editor is admins-only; cost_usd records what the
-// edit cost US (transcription + the session's own list cost).
+// that fails MAX_ATTEMPTS times in a row fails the edit. cost_usd records
+// what the edit cost US (transcription + the session's own list cost).
+//
+// Credits (2026-10-03, charge.ts): the turn's hold is settled when the turn
+// ends — a delivered turn keeps what Opus used (pricing.ts turnCharge), a
+// failed one gives everything back.
 
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -30,11 +33,14 @@ import {
   type ClipRecord,
   type DeliveryRecord,
   type EditRow,
+  type HoldRecord,
   type Output,
   type SessionRecord,
   type Step,
 } from "./job";
 import { whisperCostUsd } from "./prices";
+import { settleHold } from "./charge";
+import { turnCharge } from "./pricing";
 import { transcribeTwice } from "./transcribe";
 import { extractSpeech, probeClip } from "./work";
 import { mediaUrl } from "../media/url";
@@ -107,7 +113,8 @@ export async function advanceEdit(editId: string, deps: AdvanceDeps): Promise<Ad
         console.error(`[editor] ${row.id} ${step.kind} failed (attempt ${attempts}):`, message);
         if (broke) await outOfCredit(deps);
         if (fatal || attempts >= MAX_ATTEMPTS) {
-          await save(admin, row.id, { stage: "failed", error: broke ? OUT_OF_CREDIT_ERROR : customerError(step, err), progress: null, attempts });
+          const failed: Partial<EditRow> = { stage: "failed", error: broke ? OUT_OF_CREDIT_ERROR : customerError(step, err), progress: null, attempts };
+          await save(admin, row.id, { ...failed, ...(await giveBack(admin, row)) });
           outcome = "failed";
         } else {
           await save(admin, row.id, { attempts });
@@ -118,6 +125,8 @@ export async function advanceEdit(editId: string, deps: AdvanceDeps): Promise<Ad
       const stageChanged = next.stage !== undefined && next.stage !== row.stage;
       const patch: Partial<EditRow> = { progress: PROGRESS[step.kind], ...next, attempts: stageChanged ? 0 : next.attempts ?? 0 };
       if (patch.stage === "done" || patch.stage === "failed") patch.progress = null;
+      // No video this turn: its hold comes back whole.
+      if (patch.stage === "failed") Object.assign(patch, await giveBack(admin, { ...row, ...patch } as EditRow));
       await save(admin, row.id, patch);
       row = { ...row, ...patch } as EditRow;
       outcome = row.stage === "done" ? "done" : row.stage === "failed" ? "failed" : "advanced";
@@ -127,6 +136,48 @@ export async function advanceEdit(editId: string, deps: AdvanceDeps): Promise<Ad
     await admin.from("video_edits").update({ locked_at: null }).eq("id", editId);
   }
   return outcome;
+}
+
+/** The hold of the turn in progress (charge.ts), if it has not been settled. */
+function openHold(row: EditRow): HoldRecord | null {
+  const turn = row.render?.turn ?? 1;
+  return (row.plan?.holds ?? []).find((h) => h.turn === turn && (h.charged === null || h.charged === undefined)) ?? null;
+}
+
+/**
+ * Settles the turn's hold: `charge` credits kept (0 gives everything back),
+ * and the plan's record of it. Nothing to settle → no change to the plan.
+ */
+async function settleTurn(admin: Admin, row: EditRow, charge: number, outcome: "succeeded" | "failed"): Promise<HoldRecord[] | null> {
+  const hold = openHold(row);
+  if (!hold) return null;
+  const kept = outcome === "failed" ? 0 : Math.max(0, Math.min(hold.credits, charge));
+  if (hold.rowId) {
+    const what = hold.turn === 1 ? "cut" : "change";
+    const detail =
+      outcome === "failed"
+        ? `Director's Cut · this ${what} didn't deliver a video, so the ${hold.credits} credits it held came back.`
+        : `Director's Cut · this ${what} held ${hold.credits} credits and used ${kept}; ${hold.credits - kept} came back.`;
+    await settleHold(admin, hold.rowId, { charge: kept, outcome, detail });
+  }
+  return (row.plan?.holds ?? []).map((h) => (h === hold ? { ...h, charged: kept, refunded: hold.credits - kept } : h));
+}
+
+/** A failed turn: its hold back, as a patch for the row's plan (empty when there was none). */
+async function giveBack(admin: Admin, row: EditRow): Promise<Partial<EditRow>> {
+  try {
+    const holds = await settleTurn(admin, row, 0, "failed");
+    return holds && row.plan ? { plan: { ...row.plan, holds } } : {};
+  } catch (err) {
+    // The backstop (charge.ts settleForgottenHolds) gives it back later.
+    console.error(`[editor] ${row.id} hold not given back:`, err instanceof Error ? err.message : err);
+    return {};
+  }
+}
+
+/** What listening to the footage cost: each clip with a sound track, heard twice (transcribeTwice). */
+export function listeningUsd(clips: ClipRecord[]): number {
+  return clips.reduce((n, c) => n + (c.speech === "speech" || c.speech === "no-speech" ? 2 * whisperCostUsd(c.probe?.duration ?? 0) : 0), 0);
 }
 
 async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => number): Promise<Partial<EditRow> | "wait"> {
@@ -223,17 +274,36 @@ async function runStep(step: Step, row: EditRow, deps: AdvanceDeps, now: () => n
       }
       const history = row.plan?.history ?? [];
       const outputs: Output[] = [];
+      // The turn's hold (charge.ts) is its first video's row.
+      const hold = openHold(row);
       for (const [i, o] of delivery.outputs.entries()) {
-        const generationId = derivedUuid(`video-edit:${row.id}:${session.turn}:${i}`);
+        const generationId = i === 0 && hold?.rowId ? hold.rowId : derivedUuid(`video-edit:${row.id}:${session.turn}:${i}`);
         await deliverOne(admin, row, generationId, o);
         const project = o.project ? await keepProject(admin, row, generationId, o.project) : null;
         const cover = o.cover ? await keepCover(admin, row, generationId, o.cover) : null;
         outputs.push({ title: o.title, summary: o.summary, aspect: o.aspect, seconds: o.seconds, generationId, turn: session.turn, project, cover });
       }
       const said = delivery.outputs.map((o) => (o.title ? `${o.title}: ${o.summary}` : o.summary)).filter(Boolean);
+      // The turn's hold: what Opus used since the turn began, the listening
+      // (first cut only) and the download, never more than was held.
+      const holds = hold
+        ? await settleTurn(
+            admin,
+            row,
+            turnCharge({
+              sessionUsd: view.costUsd - (session.turnStartUsd ?? 0),
+              whisperUsd: session.turn === 1 ? listeningUsd(row.clips) : 0,
+              footageBytes: hold.bytes,
+              held: hold.credits,
+            }),
+            "succeeded",
+          )
+        : null;
       const plan: DeliveryRecord = {
+        ...row.plan,
         outputs: [...(row.plan?.outputs ?? []), ...outputs],
         history: [...history, ...said.map((text) => ({ role: "editor" as const, text })), ...(delivery.notes ? [{ role: "editor" as const, text: delivery.notes }] : [])],
+        ...(holds ? { holds } : {}),
       };
       return {
         stage: "done",
@@ -336,9 +406,27 @@ export async function deliverOne(
   const path = `${row.user_id}/${generationId}.mp4`;
   const { error: upErr } = await admin.storage.from("generated-videos").upload(path, o.bytes, { contentType: "video/mp4", upsert: true });
   if (upErr) throw new Error(`couldn't keep the rendered video: ${upErr.message}`);
-  const { data: already } = await admin.from("generations").select("id").eq("id", generationId).maybeSingle();
-  if (already) return;
   const prompt = [o.title, row.brief.trim()].filter(Boolean).join(" — ") || "Edited video";
+  const { data: already } = await admin.from("generations").select("id, status, result_url").eq("id", generationId).maybeSingle<{ id: string; status: string; result_url: string | null }>();
+  if (already?.result_url) return;
+  if (already) {
+    // The turn's hold (charge.ts) is this video's row: the video lands on it
+    // and it comes out of hiding; settling it sets its final status.
+    const { error } = await admin
+      .from("generations")
+      .update({
+        prompt_input: prompt.slice(0, 2000),
+        result_url: mediaUrl("generated-videos", path),
+        video_duration_seconds: Math.round(o.seconds) || null,
+        video_aspect_ratio: o.aspect,
+        deleted_at: null,
+        ...(already.status === "failed" ? { status: "succeeded" } : {}),
+      })
+      .eq("id", generationId)
+      .eq("user_id", row.user_id);
+    if (error) throw new Error(`couldn't add the edit to History: ${error.message}`);
+    return;
+  }
   const { error } = await admin.from("generations").insert({
     id: generationId,
     user_id: row.user_id,

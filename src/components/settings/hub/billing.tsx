@@ -33,6 +33,7 @@ export function SpendBreakdown({
     upscales: h.kindUpscales,
     layers: h.kindLayers,
     mystique: h.kindMystique,
+    editor: h.kindEditor,
   };
   return (
     <div className="flex flex-col gap-2.5">

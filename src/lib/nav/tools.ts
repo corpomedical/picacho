@@ -63,6 +63,8 @@ export type ToolGates = {
   mystiqueVisible: boolean;
   liveVisible: boolean;
   cutVisible: boolean;
+  /** Effects: admins only (operator, 2026-10-03), under the same switch as Director's Cut. */
+  effectsVisible: boolean;
   pressTourVisible: boolean;
 };
 
@@ -73,7 +75,7 @@ const GATE: Partial<Record<ToolKey, keyof ToolGates>> = {
   recast: "mystiqueVisible",
   live: "liveVisible",
   cut: "cutVisible",
-  effects: "cutVisible",
+  effects: "effectsVisible",
 };
 
 /** The tools this account may open, in panel order. */

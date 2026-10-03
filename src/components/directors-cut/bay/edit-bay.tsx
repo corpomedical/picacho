@@ -15,6 +15,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/provider";
+import { formatMsg } from "@/lib/i18n/format";
+import { exportCredits } from "@/lib/editor/pricing";
 import { checkExport, exportProject, type EditDetail, type EditSummary } from "@/lib/editor/actions";
 import { splitClip, type TimelineClip, type TimelineModel } from "@/lib/editor/timeline";
 import { useWideAt } from "@/components/sets/studio-frame";
@@ -40,6 +42,7 @@ export function EditBay({
   detail,
   onRefresh,
   offMusic = [],
+  isAdmin = false,
   director,
   newEdit,
   fallback,
@@ -53,6 +56,8 @@ export function EditBay({
   onRefresh: () => Promise<void>;
   /** Music engines taken off the menu on Admin → Models. */
   offMusic?: string[];
+  /** Admins are not charged, so no price shows on Score or Export. */
+  isAdmin?: boolean;
   /** Opus's notes and "ask for a change", whole or in parts. */
   director: (part: DirectorPart) => ReactNode;
   /** The brief for a new edit, drawn in place of the bay; it calls `close` to come back, or once the edit has started. */
@@ -122,7 +127,10 @@ export function EditBay({
   }, [detailId, renderingId, onRefresh, b.exported, b.exportFailed]);
 
   const busy = sending || rendering !== null;
-  const spec = video ? `${video.aspect} · ${video.aspect === "16:9" || video.aspect === "9:16" ? "1080p" : "1080 × 1080"}` : "";
+  // Export's fixed price (pricing.ts) — admins are not charged.
+  const exportCost = video ? exportCredits(video.seconds) : 0;
+  const exportPrice = isAdmin || !video ? null : exportCost === 1 ? b.credit : formatMsg(b.credits, { n: exportCost });
+  const spec = video ? `${video.aspect} · ${video.aspect === "16:9" || video.aspect === "9:16" ? "1080p" : "1080 × 1080"}${exportPrice ? ` · ${exportPrice}` : ""}` : "";
   const name = video?.title || detail?.brief || "";
   const savedLabel = saving === "pending" || saving === "saving" ? b.saving : saving === "saved" ? b.saved : saving === "failed" ? b.saveFailed : "";
 
@@ -304,6 +312,7 @@ export function EditBay({
               setRightTab={setRightTab}
               onRefresh={onRefresh}
               offMusic={offMusic}
+              isAdmin={isAdmin}
               onSaving={setSaving}
               exportButton={exportButton}
               exportNote={exportNote}
@@ -370,6 +379,7 @@ function ProjectBay({
   setRightTab,
   onRefresh,
   offMusic,
+  isAdmin,
   onSaving,
   exportButton,
   exportNote,
@@ -389,6 +399,7 @@ function ProjectBay({
   setRightTab: (t: RightTab) => void;
   onRefresh: () => Promise<void>;
   offMusic: string[];
+  isAdmin: boolean;
   onSaving: (s: SaveState) => void;
   exportButton: ReactNode;
   exportNote: string | null;
@@ -514,6 +525,7 @@ function ProjectBay({
       inUse={clips.find((c) => isTake(c.src))?.src ?? null}
       onComposed={onRefresh}
       offMusic={offMusic}
+      isAdmin={isAdmin}
       onUse={(take) => {
         setSelected(project.placeMusic(take));
       }}
@@ -655,7 +667,7 @@ function ProjectBay({
             <>
               <PanelTabs value="deliver" onChange={() => undefined} items={[["deliver", b.deliver]]} />
               <div className="min-h-0 flex-1 overflow-y-auto">
-                <Deliver aspect={aspect} seconds={model?.duration ?? seconds} downloadUrl={downloadUrl} exportButton={exportButton} exportNote={exportNote} />
+                <Deliver aspect={aspect} seconds={model?.duration ?? seconds} downloadUrl={downloadUrl} exportButton={exportButton} exportNote={exportNote} isAdmin={isAdmin} />
               </div>
             </>
           )}
@@ -851,15 +863,31 @@ function PanelTabs({ value, onChange, items, dot }: { value: string; onChange: (
 }
 
 /** Deliver: what Export makes, and the key that makes it. */
-function Deliver({ aspect, seconds, downloadUrl, exportButton, exportNote }: { aspect: string; seconds: number; downloadUrl: string | null; exportButton: ReactNode; exportNote: string | null }) {
+function Deliver({
+  aspect,
+  seconds,
+  downloadUrl,
+  exportButton,
+  exportNote,
+  isAdmin,
+}: {
+  aspect: string;
+  seconds: number;
+  downloadUrl: string | null;
+  exportButton: ReactNode;
+  exportNote: string | null;
+  isAdmin: boolean;
+}) {
   const { t } = useLocale();
   const d = t.directorsCut;
   const b = d.bay;
   const size = aspect === "9:16" ? "1080 × 1920" : aspect === "1:1" ? "1080 × 1080" : "1920 × 1080";
+  const price = exportCredits(seconds);
   const rows: [string, string][] = [
     [d.shape, aspect],
     [b.size, size],
     [b.length, `${seconds.toFixed(1)} s`],
+    ...(isAdmin ? [] : ([[b.price, price === 1 ? b.credit : formatMsg(b.credits, { n: price })]] as [string, string][])),
   ];
   return (
     <div className="flex flex-col gap-5 p-4">
